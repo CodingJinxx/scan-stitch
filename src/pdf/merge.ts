@@ -12,6 +12,18 @@ export class AppendTargetError extends Error {
   }
 }
 
+/** A specific source page/image could not be merged. `sourceIndex` is its index in the `sources` array. */
+export class MergeSourceError extends Error {
+  sourceIndex: number;
+  constructor(sourceIndex: number, message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'MergeSourceError';
+    this.sourceIndex = sourceIndex;
+  }
+}
+
+const norm360 = (n: number): number => ((n % 360) + 360) % 360;
+
 const DEFAULT_DPI = 150;
 
 interface ImageMeta { orientation: number; dpi: number | null; }
@@ -112,12 +124,16 @@ function readPngMeta(b: Uint8Array): ImageMeta {
   return { orientation: 1, dpi: null };
 }
 
-/** Rotation implied by an EXIF orientation (mirroring cannot be expressed via /Rotate and is ignored). */
+/**
+ * Rotation implied by an EXIF orientation. Only 1, 3, 6 and 8 are pure rotations.
+ * Mirrored orientations (2, 4, 5, 7) cannot be expressed via /Rotate, so mirroring is
+ * unsupported and they produce no rotation at all (the image is shown as stored).
+ */
 function exifRotation(o: number): number {
   switch (o) {
-    case 3: case 4: return 180;
-    case 5: case 6: return 90;
-    case 7: case 8: return 270;
+    case 3: return 180;
+    case 6: return 90;
+    case 8: return 270;
     default: return 0;
   }
 }
@@ -141,17 +157,27 @@ async function addImagePage(out: PDFDocument, src: MergeSource): Promise<void> {
   const h = (image.height * 72) / dpi;
   const page = out.addPage([w, h]);
   page.drawImage(image, { x: 0, y: 0, width: w, height: h });
-  page.setRotation(degrees((exifRotation(meta.orientation) + src.rotation) % 360));
+  page.setRotation(degrees(norm360(exifRotation(meta.orientation) + src.rotation)));
 }
 
-async function addPdfPage(out: PDFDocument, src: MergeSource): Promise<void> {
-  const doc = await PDFDocument.load(src.bytes);
-  if (src.pageIndex < 0 || src.pageIndex >= doc.getPageCount()) {
-    throw new Error(`Page ${src.pageIndex} does not exist in source PDF`);
+/**
+ * Source documents are cached by the identity of their bytes, so callers must pass the SAME
+ * Uint8Array instance for every page taken from one source file; each file is then parsed once.
+ */
+type SourceCache = Map<Uint8Array, PDFDocument>;
+
+async function addPdfPage(out: PDFDocument, src: MergeSource, cache: SourceCache): Promise<void> {
+  let doc = cache.get(src.bytes);
+  if (!doc) {
+    doc = await PDFDocument.load(src.bytes);
+    cache.set(src.bytes, doc);
+  }
+  if (!Number.isInteger(src.pageIndex) || src.pageIndex < 0 || src.pageIndex >= doc.getPageCount()) {
+    throw new Error(`page ${src.pageIndex} does not exist in the source PDF (${doc.getPageCount()} pages)`);
   }
   const [copied] = await out.copyPages(doc, [src.pageIndex]);
   const page = out.addPage(copied);
-  page.setRotation(degrees((page.getRotation().angle + src.rotation) % 360));
+  page.setRotation(degrees(norm360(page.getRotation().angle + src.rotation)));
 }
 
 export async function mergePages(sources: MergeSource[], appendTo?: Uint8Array): Promise<MergeResult> {
@@ -160,16 +186,25 @@ export async function mergePages(sources: MergeSource[], appendTo?: Uint8Array):
     try {
       out = await PDFDocument.load(appendTo, { updateMetadata: false });
     } catch (e) {
-      throw new AppendTargetError('The append target PDF is encrypted, corrupt or unreadable.', { cause: e });
+      // pdf-lib's EncryptedPDFError does not survive its ES5 build for instanceof; match its message.
+      const why = /encrypted/i.test(e instanceof Error ? e.message : '') ? 'is encrypted' : 'is corrupt or unreadable';
+      throw new AppendTargetError(`The append target PDF ${why}.`, { cause: e });
     }
   } else {
     out = await PDFDocument.create();
   }
+  const cache: SourceCache = new Map();
   // Sequential on purpose: keeps memory bounded for large scan batches.
-  for (const src of sources) {
-    if (src.kind === 'image') await addImagePage(out, src);
-    else await addPdfPage(out, src);
+  for (const [i, src] of sources.entries()) {
+    try {
+      if (src.kind === 'image') await addImagePage(out, src);
+      else await addPdfPage(out, src, cache);
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : String(e);
+      throw new MergeSourceError(i, `Could not merge source ${i + 1} of ${sources.length}: ${detail}`, { cause: e });
+    }
   }
+  cache.clear();
   const bytes = await out.save();
   return { bytes, pageCount: out.getPageCount() };
 }

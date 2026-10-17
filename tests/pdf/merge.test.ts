@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
-import { AppendTargetError, mergePages, type MergeSource } from '../../src/pdf/merge';
+import { describe, expect, it, vi } from 'vitest';
+import { PDFArray, PDFName, PDFNumber, PDFDocument, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
+import { AppendTargetError, MergeSourceError, mergePages, type MergeSource } from '../../src/pdf/merge';
 import { makeEncryptedLookingPdf, makeJpeg, makePdf, makePng } from '../fixtures/builders';
 
 const pdfSrc = (bytes: Uint8Array, pageIndex = 0, rotation: MergeSource['rotation'] = 0): MergeSource => ({
@@ -120,5 +120,61 @@ describe('mergePages', () => {
     await expect(mergePages([pdfSrc(add)], await makeEncryptedLookingPdf())).rejects.toBeInstanceOf(
       AppendTargetError,
     );
+  });
+
+  it('normalises a negative existing /Rotate', async () => {
+    const a = await makePdf(['A']);
+    const doc = await PDFDocument.load(a);
+    doc.getPage(0).node.set(PDFName.of('Rotate'), PDFNumber.of(-90));
+    const res = await mergePages([pdfSrc(await doc.save(), 0, 90)]);
+    expect((await pageSizes(res.bytes))[0].rot).toBe(0);
+  });
+
+  it('ignores mirrored EXIF orientations (no rotation)', async () => {
+    for (const o of [2, 4, 5, 7]) {
+      const res = await mergePages([imgSrc(makeJpeg(100, 50, { orientation: o }))]);
+      expect((await pageSizes(res.bytes))[0].rot).toBe(0);
+    }
+  });
+
+  it('parses each distinct source once and handles non-sequential pageIndex', async () => {
+    const five = await PDFDocument.create();
+    for (let i = 0; i < 5; i++) five.addPage([100 + i, 100]);
+    const bytes = await five.save();
+    const spy = vi.spyOn(PDFDocument, 'load');
+    try {
+      const res = await mergePages([pdfSrc(bytes, 4), pdfSrc(bytes, 0), pdfSrc(bytes, 2)]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(res.pageCount).toBe(3);
+      expect((await pageSizes(res.bytes)).map((s) => s.w)).toEqual([104, 100, 102]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('reports the failing source index', async () => {
+    const good = await makePdf(['A']);
+    const bad = new TextEncoder().encode('garbage');
+    const err = await mergePages([pdfSrc(good), imgSrc(makeJpeg(10, 10)), pdfSrc(bad)]).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(MergeSourceError);
+    expect((err as MergeSourceError).sourceIndex).toBe(2);
+    await expect(mergePages([pdfSrc(good, 3)])).rejects.toThrow(/page 3 does not exist/);
+    await expect(mergePages([pdfSrc(good, 3)])).rejects.toBeInstanceOf(MergeSourceError);
+    const img = await mergePages([imgSrc(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))]).catch((e: unknown) => e);
+    expect(img).toBeInstanceOf(MergeSourceError);
+    expect((img as MergeSourceError).sourceIndex).toBe(0);
+  });
+
+  it('leaves append input untouched after a failure and names encryption', async () => {
+    const add = await makePdf(['new']);
+    const enc = await makeEncryptedLookingPdf();
+    const copy = Uint8Array.from(enc);
+    const err = await mergePages([pdfSrc(add)], enc).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppendTargetError);
+    expect((err as Error).message).toMatch(/encrypted/);
+    expect(enc).toEqual(copy);
+    const junk = new TextEncoder().encode('not a pdf');
+    const e2 = await mergePages([pdfSrc(add)], junk).catch((e: unknown) => e);
+    expect((e2 as Error).message).not.toMatch(/encrypted/);
   });
 });

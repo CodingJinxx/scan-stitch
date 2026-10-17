@@ -18,17 +18,12 @@ export async function makePdf(
 }
 
 export async function makeEncryptedLookingPdf(): Promise<Uint8Array> {
-  // A minimal file with an /Encrypt entry in the trailer; pdf-lib refuses it without ignoreEncryption.
-  const text = [
-    '%PDF-1.4',
-    '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj',
-    '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj',
-    '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 100 100]>>endobj',
-    '4 0 obj<</Filter/Standard/V 1/R 2/O(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)/U(bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)/P -4>>endobj',
-    'trailer<</Root 1 0 R/Size 5/Encrypt 4 0 R/ID[<00><00>]>>',
-    '%%EOF',
-  ].join('\n');
-  return new TextEncoder().encode(text);
+  // A well-formed PDF whose trailer carries an /Encrypt dictionary; pdf-lib refuses it without ignoreEncryption.
+  const doc = await PDFDocument.create();
+  doc.addPage([100, 100]);
+  const enc = doc.context.obj({ Filter: 'Standard', V: 1, R: 2, P: -4 });
+  doc.context.trailerInfo.Encrypt = doc.context.register(enc);
+  return doc.save();
 }
 
 function u16be(n: number): number[] {
