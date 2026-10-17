@@ -94,3 +94,14 @@ describe('nextCounter', () => {
     expect(nextCounter('Scan {counter}', ['Scan 1.pdf'])).toBe(2);
   });
 });
+
+describe('placeholder names that exist on Object.prototype', () => {
+  it('leaves {constructor}, {toString} and {__proto__} as literals', () => {
+    expect(resolveTemplate('A {constructor} {toString} {__proto__} {hasOwnProperty}', ctx)).toBe(
+      'A {constructor} {toString} {__proto__} {hasOwnProperty}',
+    );
+  });
+  it('reports them as unknown', () => {
+    expect(findUnknownPlaceholders('{constructor} {toString} {date}')).toEqual(['constructor', 'toString']);
+  });
+});

@@ -149,5 +149,5 @@ export const START_ERROR_TEXT: Record<StartError, string> = {
   'no-watch-root': 'Set the scanner folder in the plugin settings first.',
   'no-destination': 'Choose a destination folder.',
   'no-append-target': 'Choose the PDF to append to.',
-  'append-target-invalid': 'Choose an existing PDF',
+  'append-target-invalid': 'Choose an existing PDF.',
 };

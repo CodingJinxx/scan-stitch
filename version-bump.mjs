@@ -25,12 +25,13 @@ function main() {
   const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
   const { minAppVersion } = manifest;
   manifest.version = targetVersion;
-  writeFileSync("manifest.json", JSON.stringify(manifest, null, "\t") + "\n");
+  // Two-space indent, the style of manifest.json, versions.json and package.json.
+  writeFileSync("manifest.json", JSON.stringify(manifest, null, 2) + "\n");
 
   const versions = JSON.parse(readFileSync("versions.json", "utf8"));
   const next = updateVersions(versions, targetVersion, minAppVersion);
   if (next !== versions) {
-    writeFileSync("versions.json", JSON.stringify(next, null, "\t") + "\n");
+    writeFileSync("versions.json", JSON.stringify(next, null, 2) + "\n");
   }
 }
 

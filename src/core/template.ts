@@ -19,7 +19,8 @@ const OTHER_NAMES = ['pages', 'counter', 'folder'];
 
 export function resolveTemplate(pattern: string, ctx: TemplateContext): string {
   return pattern.replace(PLACEHOLDER, (match, name: string, fmt?: string) => {
-    if (name in DATE_DEFAULTS) {
+    // own keys only: `in` would also match {constructor}, {toString}, ...
+    if (Object.hasOwn(DATE_DEFAULTS, name)) {
       return ctx.format(ctx.now, fmt ?? DATE_DEFAULTS[name]);
     }
     if (name === 'pages') return ctx.pages === null ? '?' : String(ctx.pages);
@@ -33,7 +34,7 @@ export function findUnknownPlaceholders(pattern: string): string[] {
   const unknown: string[] = [];
   for (const m of pattern.matchAll(PLACEHOLDER)) {
     const name = m[1];
-    if (!(name in DATE_DEFAULTS) && !OTHER_NAMES.includes(name) && !unknown.includes(name)) {
+    if (!Object.hasOwn(DATE_DEFAULTS, name) && !OTHER_NAMES.includes(name) && !unknown.includes(name)) {
       unknown.push(name);
     }
   }
