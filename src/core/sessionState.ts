@@ -66,10 +66,11 @@ export class SessionState {
   move(id: string, toIndex: number): void {
     const from = this.d.pages.findIndex((p) => p.id === id);
     if (from < 0) return;
-    this.checkpoint();
     const pages = [...this.d.pages];
     const [item] = pages.splice(from, 1);
     const to = Math.max(0, Math.min(toIndex, pages.length));
+    if (to === from) return;
+    this.checkpoint();
     pages.splice(to, 0, item);
     this.d.pages = pages;
   }
@@ -88,6 +89,15 @@ export class SessionState {
     this.undoStack.push(clonePages(this.d.pages));
     this.d.pages = next;
     return true;
+  }
+
+  /** True when a review edit (rotate, remove, move) can be undone. */
+  canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  canRedo(): boolean {
+    return this.redoStack.length > 0;
   }
 
   countFiles(): number {

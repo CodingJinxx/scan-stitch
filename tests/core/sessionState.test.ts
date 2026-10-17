@@ -199,3 +199,27 @@ describe('SessionState history barriers', () => {
     expect(ids(s)).toEqual(['b.pdf#0', 'c.pdf#0']);
   });
 });
+
+describe('SessionState canUndo/canRedo', () => {
+  it('reports whether review edits can be undone or redone', () => {
+    const s = three();
+    expect(s.canUndo()).toBe(false);
+    expect(s.canRedo()).toBe(false);
+    s.rotate(['a.pdf#0'], 1);
+    expect(s.canUndo()).toBe(true);
+    s.undo();
+    expect(s.canUndo()).toBe(false);
+    expect(s.canRedo()).toBe(true);
+    s.redo();
+    expect(s.canUndo()).toBe(true);
+    expect(s.canRedo()).toBe(false);
+  });
+
+  it('moving a page onto its own position is not an edit', () => {
+    const s = three();
+    s.move('b.pdf#0', 1);
+    expect(s.canUndo()).toBe(false);
+    s.move('b.pdf#0', 0);
+    expect(s.canUndo()).toBe(true);
+  });
+});
