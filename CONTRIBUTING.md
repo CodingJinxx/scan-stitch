@@ -45,6 +45,10 @@ All four must pass (CI runs the same). Put pure logic in testable modules withou
 
 Keep pull requests focused, one change per PR, and describe what you tested.
 
+## The website
+
+The landing page is `docs/site/index.html`. `.github/workflows/pages.yml` deploys it on pushes to `main` that touch `docs/site/` or `assets/`, copying `assets/` next to the page in the runner (the repo keeps one copy). It can only deploy once the repository setting **Settings → Pages → Build and deployment → Source** is set to **GitHub Actions** (maintainers only). To preview locally, copy `docs/site` and `assets` into one folder and serve it with any static file server.
+
 ## Licence
 
 By contributing you agree that your contribution is licensed under the [MIT licence](LICENSE).

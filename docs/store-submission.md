@@ -128,6 +128,7 @@ Legacy PR title and body, UNVERIFIED because the PR template no longer exists: t
 
 1. ~~Write the README~~ done (purpose, usage, settings, disclosures; see section 1 and 4).
 2. Push and merge; confirm the repo's Actions setting allows workflow write permissions.
+   For the landing page, set Settings → Pages → Build and deployment → Source to "GitHub Actions" before `.github/workflows/pages.yml` can deploy (then run it once via workflow_dispatch or push a change under `docs/site/`).
 3. Tag and push `1.0.0` (preferred) or `v1.0.0`; check the Release run and that the release has tag `1.0.0` and exactly `main.js`, `manifest.json`, `styles.css`.
 4. Check `id` and `name` are unique in the directory.
 5. Sign in at community.obsidian.md, link GitHub, add the plugin (section 7), agree to the policies.
