@@ -8,12 +8,13 @@ on:
       # exactly (no "v"), so the bare form is the canonical tag.
       - "[0-9]+.[0-9]+.[0-9]+"
 
-permissions:
-  contents: write
-
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload its assets
+      id-token: write # mint the OIDC token used to sign the attestations
+      attestations: write # store the build provenance attestations
     steps:
       - uses: actions/checkout@v4
 
@@ -41,6 +42,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+      # Signed SLSA build provenance for the release assets, verifiable with
+      # `gh attestation verify main.js --repo CodingJinxx/scan-stitch`.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Create GitHub release
         env:

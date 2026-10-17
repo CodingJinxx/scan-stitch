@@ -68,6 +68,12 @@ Scan Stitch is **desktop only** and needs Obsidian 1.5.0 or newer. It is tested 
 4. Restart Obsidian or reload plugins, then enable **Scan Stitch** under Settings → Community plugins.
 5. In Settings → Scan Stitch, set **Watch folder** to the folder your scanner saves into.
 
+**Verifying a download (optional):** from 1.0.1 on, the release workflow publishes signed build provenance ([GitHub artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)) for `main.js`, `manifest.json` and `styles.css`. With the [GitHub CLI](https://cli.github.com/) you can check that a downloaded file was built by this repository's release workflow:
+
+```sh
+gh attestation verify main.js --repo CodingJinxx/scan-stitch
+```
+
 ### Limitations
 
 - **Windows is the only fully tested platform.** macOS and Linux are untested; they are expected to work through the polling fallback (besides listening for file system events, the folder is rescanned every 3 seconds).

@@ -7,7 +7,7 @@ Checked 2026-10-17 against the official sources listed at the bottom. Status per
 - **Submission is no longer a pull request to `obsidianmd/obsidian-releases`.** The current "Submit your plugin" page says to sign in at community.obsidian.md, link GitHub, and add the plugin there. `obsidianmd/obsidian-releases` now only mirrors the directory (its recent commits are bot "Mirror community plugins and themes"), its README says it does not accept issues, and `.github/PULL_REQUEST_TEMPLATE/plugin.md` no longer exists (404). A hand-written `community-plugins.json` entry and PR therefore are not part of the documented flow. A draft entry is kept in section 7 for reference only. UNVERIFIED whether the PR route is still processed; follow the official page.
 - **The release tag must equal `manifest.json` `version` exactly, i.e. `1.0.0`, not `v1.0.0`.** Obsidian looks for "GitHub releases tagged identically to the version inside manifest.json" (obsidian-releases README, "How community plugins are pulled"; Submit your plugin, Step 2). The release workflow therefore creates the release under the bare version even if a `v1.0.0` tag is pushed. Pushing the bare tag `1.0.0` is preferred.
 - `versions.json` only needs an entry when `minAppVersion` changes (Reference/Versions: "You don't need to list every plugin release"), so `version-bump.mjs` records a version only then.
-- The official sample workflow also creates a build attestation (`actions/attest`) and a draft release. Ours creates a published release with generated notes and no attestation. The docs call the attestation "recommended". UNVERIFIED how much the automated review weighs it; consider adding it later.
+- The official sample workflow also creates a build attestation (`actions/attest`) and a draft release. Ours creates a published release with generated notes. Since 1.0.1 it also attests the release assets (the review bot recommended it for 1.0.0); see section 3.
 
 ## 1. Required files in repo root
 
@@ -49,6 +49,7 @@ Checked 2026-10-17 against the official sources listed at the bottom. Status per
 | PASS | Build output exists | `main.js` (585134 bytes), `manifest.json`, `styles.css` after `npm run build`; `main.js` is gitignored and built in CI |
 | FAIL (human step) | A GitHub release must exist before submission | none yet; see section 9 |
 | UNVERIFIED | Repo setting "Workflow permissions: read and write" (docs recommend it; the workflow also declares `permissions: contents: write`) | needs a look at Settings > Actions > General on GitHub |
+| PASS (not yet run) | Release assets carry GitHub artifact attestations (review bot recommendation for 1.0.0) | `.github/workflows/release.yml`, step "Attest build provenance": `actions/attest-build-provenance@v4` (a wrapper over `actions/attest`) with `subject-path` `main.js`, `manifest.json`, `styles.css`, after the build and before the release; job permissions `contents: write`, `id-token: write`, `attestations: write`. `artifact-metadata: write` is not granted: it is only needed for storage records, which apply to registry pushes. Verify after the first run: `gh attestation verify main.js --repo CodingJinxx/scan-stitch` (also documented in `README.md`, Install). |
 
 ## 4. Developer policies (Community directory/Developer policies)
 
