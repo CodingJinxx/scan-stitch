@@ -191,6 +191,13 @@
   .install figcaption { color: var(--muted); font-size: 0.925rem; margin-top: 12px; }
 
   /* Footer */
+  .support { border-top: 1px solid var(--rule); }
+  .support-inner { display: flex; flex-wrap: wrap; gap: 20px 40px; align-items: center; justify-content: space-between; }
+  .support-inner h2 { margin-top: 0; }
+  .support-inner p { margin-bottom: 0; }
+  .coffee { display: inline-block; border-radius: 12px; line-height: 0; }
+  .coffee img { max-width: 100%; height: auto; }
+  .coffee:focus-visible { outline: 3px solid var(--accent, currentColor); outline-offset: 4px; }
   footer { border-top: 1px solid var(--rule); padding: 32px 0 48px; color: var(--muted); font-size: 0.925rem; }
   footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 32px; justify-content: space-between; align-items: center; }
   footer p { margin: 0; max-width: none; }
@@ -211,6 +218,7 @@
     </a>
     <nav aria-label="Site">
       <a class="nav-install" href="#install">Install</a>
+      <a href="#support">Support</a>
       <a href="https://github.com/CodingJinxx/scan-stitch">GitHub</a>
     </nav>
   </div>
@@ -367,6 +375,16 @@
         </picture>
         <figcaption>Point it at your scanner folder once; the rest has sensible defaults.</figcaption>
       </figure>
+    </div>
+  </section>
+
+  <section id="support" class="support" aria-labelledby="support-title">
+    <div class="wrap support-inner">
+      <div>
+        <h2 id="support-title">Support Scan Stitch</h2>
+        <p>Scan Stitch is free and open source. If it saves you time, you can buy me a coffee. It is never expected, and it helps me keep maintaining it.</p>
+      </div>
+      <a class="coffee" href="https://buymeacoffee.com/codingjinxx"><img src="assets/coffee-button.svg" alt="Buy me a coffee" width="260" height="55"></a>
     </div>
   </section>
 </main>

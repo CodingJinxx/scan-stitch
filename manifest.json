@@ -6,5 +6,6 @@
   "description": "Combine one-file-per-page scanner output into a single PDF with fast rotation review.",
   "author": "Jay Leimer",
   "authorUrl": "https://github.com/CodingJinxx",
+  "fundingUrl": "https://buymeacoffee.com/codingjinxx",
   "isDesktopOnly": true
 }
