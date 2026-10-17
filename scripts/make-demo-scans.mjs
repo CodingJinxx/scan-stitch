@@ -138,7 +138,7 @@ function parseGenerate(argv) {
   if (!out.outDir) throw new Error('Missing <outDir>');
   if (out.days.length === 0) throw new Error('--days needs at least one name');
   for (const d of out.days) {
-    if (!/^[A-Za-z0-9_-]+$/.test(d)) throw new Error(`Invalid day folder name "${d}" (letters, digits, _ and - only)`);
+    if (!/^[A-Za-z0-9_-]+$/.test(d) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(d)) throw new Error(`Invalid day folder name "${d}" (letters, digits, _ and - only; no Windows device names)`);
   }
   if (out.count !== null && (!Number.isInteger(out.count) || out.count < 1)) throw new Error('--count needs a positive integer');
   return out;
@@ -167,18 +167,20 @@ async function generate(argv) {
   for (const [di, [day, n]] of plan.entries()) {
     const dir = join(root, day);
     mkdirSync(dir, { recursive: true });
+    let wrote = 0;
     for (let page = 1; page <= n; page++) {
       const bytes = await makePage(day, page, seq++, rotationFor(di, page, count !== null));
       const file = join(dir, `IMG_${String(page).padStart(4, '0')}.pdf`);
       try {
         writeFileSync(file, bytes, { flag: 'wx' });
         total++;
+        wrote++;
       } catch (e) {
         if (e?.code !== 'EEXIST') throw e;
         console.log(`skip (exists) ${file}`);
       }
     }
-    console.log(`${dir}: ${n} pages`);
+    console.log(`${dir}: ${n} pages (${wrote} new)`);
   }
   console.log(`Wrote ${total} synthetic pages under ${root}`);
 }
