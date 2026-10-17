@@ -1,6 +1,7 @@
-import { Modal, Setting, TFile, TFolder, moment } from 'obsidian';
+import { Modal, Setting, TFile, TFolder } from 'obsidian';
 import type { App } from 'obsidian';
 import type { ScanStitchSettings } from '../types';
+import { formatDate } from './dateFormat';
 import { FolderSuggest, PdfSuggest } from './FolderSuggest';
 import {
   buildInit,
@@ -217,7 +218,7 @@ export class StartDialog extends Modal {
       now: new Date(),
       folder: folderName(dest),
       existingNames: existing,
-      format: (d, fmt) => moment(d).format(fmt),
+      format: formatDate,
     });
   }
 

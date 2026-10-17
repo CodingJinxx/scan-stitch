@@ -1,8 +1,9 @@
 import * as fs from 'fs';
-import { Notice, PluginSettingTab, Setting, moment } from 'obsidian';
+import { Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { App } from 'obsidian';
 import { findUnknownPlaceholders } from '../core/template';
 import type ScanStitchPlugin from '../main';
+import { formatDate } from './dateFormat';
 import { FolderSuggest } from './FolderSuggest';
 import {
   addTemplate,
@@ -329,7 +330,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
         now: new Date(),
         folder: folderName,
         existingNames: [],
-        format: (d, fmt) => moment(d).format(fmt),
+        format: formatDate,
       });
       previewEl.setText(`Preview: ${preview}.pdf`);
       const err = validateTemplate(settings.templates, ed, ed.original ?? undefined);

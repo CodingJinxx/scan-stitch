@@ -1,4 +1,4 @@
-import { ItemView, Modal, Notice, Platform, Scope, TFile, TFolder, moment, normalizePath, type App, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Modal, Notice, Platform, Scope, TFile, TFolder, normalizePath, type App, type WorkspaceLeaf } from 'obsidian';
 import { PDFDocument } from 'pdf-lib';
 import { pushRecent } from '../core/recents';
 import type { SessionState } from '../core/sessionState';
@@ -18,6 +18,7 @@ import {
   rotationDelta,
   type ReviewAction,
 } from './reviewLogic';
+import { formatDate, nowStamp } from './dateFormat';
 import { baseName, savePages, type SaveVault } from './saveFlow';
 import { folderName, parentFolder } from './startLogic';
 import { REVIEW_VIEW_TYPE } from './viewTypes';
@@ -376,7 +377,7 @@ export class ReviewView extends ItemView {
       pages: count,
       folder: folderName(folder),
       existingNames,
-      format: (d, fmt) => moment(d).format(fmt),
+      format: formatDate,
     });
   }
 
@@ -932,7 +933,7 @@ export class ReviewView extends ItemView {
       return f;
     };
     const dir = normalizePath(`${this.deps.pluginDir}/backups`);
-    const backup = normalizePath(`${dir}/${moment().format('YYYYMMDD-HHmmss')}-${baseName(target)}`);
+    const backup = normalizePath(`${dir}/${nowStamp('YYYYMMDD-HHmmss')}-${baseName(target)}`);
     const io: ReplaceIO = {
       read: async () => new Uint8Array(await vault.readBinary(file())),
       write: async (bytes) => {
