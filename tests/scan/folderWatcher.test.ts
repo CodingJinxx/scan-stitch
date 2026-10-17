@@ -82,9 +82,11 @@ describe('folderWatcher', () => {
   });
 
   it('never fires for a file older than since', async () => {
-    fs.writeFileSync(path.join(root, 'old.pdf'), 'data');
-    await sleep(60);
-    make({ since: Date.now() }).start();
+    const p = path.join(root, 'old.pdf');
+    fs.writeFileSync(p, 'data');
+    // `since` just after the file's own timestamps, whatever the file system's mtime granularity
+    const st = fs.statSync(p);
+    make({ since: Math.max(st.birthtimeMs, st.mtimeMs, Date.now()) + 1 }).start();
     await sleep(300);
     expect(files).toEqual([]);
   });
@@ -98,7 +100,8 @@ describe('folderWatcher', () => {
   });
 
   it('fires a growing file only after it stops growing', async () => {
-    make({ stabilityDelayMs: 40, stabilityRetries: 2 }).start();
+    // a 15 ms append loop against a >= 320 ms stable window (2 x 160 ms): wide margin for slow timers
+    make({ stabilityDelayMs: 160, stabilityRetries: 2 }).start();
     const p = path.join(root, 'grow.pdf');
     fs.writeFileSync(p, 'a');
     for (let i = 0; i < 5; i++) {
@@ -227,9 +230,10 @@ describe('folderWatcher', () => {
     await sleep(50);
     counts.readdir = 0;
     const N = 40;
+    // 10 short bursts of 4 files: the walks stay far below N/2 even when timers run slow
     for (let i = 0; i < N; i++) {
       fs.writeFileSync(path.join(root, `b${i}.pdf`), 'data');
-      await sleep(5);
+      if (i % 4 === 3) await sleep(5);
     }
     expect(await waitFor(() => files.length === N, 5000)).toBe(true);
     expect(counts.readdir).toBeLessThan(N / 2);
