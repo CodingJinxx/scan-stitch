@@ -147,6 +147,18 @@ export class SessionController {
     await this.persistNow(null);
   }
 
+  /** Plugin unload: stop watching and flush pending writes. The session and its stored copy stay as they are. */
+  async shutdown(): Promise<void> {
+    this.stopWatcher();
+    this.generation++;
+    this.listeners.clear();
+    try {
+      await this.persistChain;
+    } catch {
+      // persist errors are already reported by persistNow
+    }
+  }
+
   // ---- internals ----
 
   private rootAccessible(root: string): boolean {

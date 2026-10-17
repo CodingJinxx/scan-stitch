@@ -255,6 +255,31 @@ describe('SessionController', () => {
     expect(() => c.start(INIT)).not.toThrow();
   });
 
+  it('shutdown stops the watcher, flushes persists, keeps the session and the stored data', async () => {
+    const c = new SessionController(deps);
+    c.start(INIT);
+    await flush();
+    const before = persisted.length;
+    await c.shutdown();
+    expect(watchers[0].stopped).toBeGreaterThanOrEqual(1);
+    expect(c.state?.data.phase).toBe('scanning');
+    expect(persisted.length).toBe(before);
+    expect(persisted.at(-1)).not.toBeNull();
+    // late files from the stopped watcher are ignored
+    watchers[0].opts.onFile({ path: '/scans/late.pdf', seenAt: 5 });
+    await flush();
+    expect(c.state?.data.pages).toHaveLength(0);
+  });
+
+  it('shutdown waits for a pending persist and works with no session', async () => {
+    const c = new SessionController(deps);
+    await c.shutdown();
+    c.start(INIT);
+    const p = c.shutdown();
+    await p;
+    expect(persisted.at(-1)?.phase).toBe('scanning');
+  });
+
   describe('resume', () => {
     function data(over: Partial<SessionData> = {}): SessionData {
       return {
