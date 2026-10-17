@@ -18,7 +18,7 @@ import {
   rotationDelta,
   type ReviewAction,
 } from './reviewLogic';
-import { savePages, type SaveVault } from './saveFlow';
+import { baseName, savePages, type SaveVault } from './saveFlow';
 import { folderName, parentFolder } from './startLogic';
 import { REVIEW_VIEW_TYPE } from './viewTypes';
 
@@ -47,10 +47,6 @@ interface Thumb {
   img: HTMLImageElement | null;
   requested: boolean;
   retried: boolean;
-}
-
-function baseName(path: string): string {
-  return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
 }
 
 function plural(n: number, word: string): string {

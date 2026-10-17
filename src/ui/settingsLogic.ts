@@ -116,11 +116,9 @@ export function selectedDirFromFile(fullPath: string, relativePath: string): str
   const strip = parts.length === 0 ? 1 : parts.length - 1;
   let dir = fullPath;
   for (let i = 0; i < strip; i++) {
-    const cut = Math.max(dir.lastIndexOf('/'), dir.lastIndexOf(BACKSLASH));
+    const cut = Math.max(dir.lastIndexOf('/'), dir.lastIndexOf('\\'));
     if (cut < 0) break;
     dir = dir.slice(0, cut);
   }
   return dir;
 }
-
-const BACKSLASH = String.fromCharCode(92);

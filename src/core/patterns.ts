@@ -1,14 +1,13 @@
 import type { PageKind } from '../types';
 
-const BACKSLASH = String.fromCharCode(92);
-const SPECIAL = BACKSLASH + '^$.|+()[]{}';
+const SPECIAL = '\\^$.|+()[]{}';
 
 function globToRegExp(glob: string): RegExp {
   let body = '';
   for (const c of glob) {
     if (c === '*') body += '.*';
     else if (c === '?') body += '.';
-    else if (SPECIAL.includes(c)) body += BACKSLASH + c;
+    else if (SPECIAL.includes(c)) body += '\\' + c;
     else body += c;
   }
   return new RegExp('^' + body + '$', 'i');

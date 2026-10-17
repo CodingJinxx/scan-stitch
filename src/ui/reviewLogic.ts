@@ -78,10 +78,6 @@ export class ReviewCursor {
     return this.cur >= 0 ? this.ids[this.cur] : null;
   }
 
-  get count(): number {
-    return this.ids.length;
-  }
-
   sync(next: string[]): void {
     const prevIds = this.ids;
     const prevCur = this.cur;

@@ -53,7 +53,8 @@ export interface SaveResult {
   added: number;
 }
 
-function baseName(path: string): string {
+/** Last segment of a vault or file system path (either slash). */
+export function baseName(path: string): string {
   return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1);
 }
 
