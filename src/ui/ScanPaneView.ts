@@ -19,6 +19,7 @@ export class ScanPaneView extends ItemView {
   private renderToken = 0;
   private mode: 'empty' | 'session' | null = null;
   private thumbId: string | null = null;
+  private thumbRetriedId: string | null = null;
   private thumbImg: HTMLImageElement | null = null;
   private thumbSize: { w: number; h: number } | null = null;
   private rootEl!: HTMLElement;
@@ -121,6 +122,7 @@ export class ScanPaneView extends ItemView {
       return;
     }
     this.thumbId = id;
+    if (this.thumbRetriedId !== id) this.thumbRetriedId = null;
     this.thumbImg = null;
     this.renderToken++;
     const token = this.renderToken;
@@ -137,10 +139,19 @@ export class ScanPaneView extends ItemView {
         if (token !== this.renderToken) return;
         this.thumbEl.empty();
         this.thumbSize = { w: img.width, h: img.height };
-        this.thumbImg = this.thumbEl.createEl('img', {
+        const el = this.thumbEl.createEl('img', {
           cls: 'scan-stitch-thumb-img',
-          attr: { alt: 'Last scanned page', src: img.url },
+          attr: { alt: 'Last scanned page' },
         });
+        el.addEventListener('error', () => {
+          // The shared cache released this image URL: render once more.
+          if (token !== this.renderToken || this.thumbRetriedId === id) return;
+          this.thumbRetriedId = id;
+          this.thumbId = null;
+          this.updateThumb(this.currentLast());
+        });
+        el.src = img.url;
+        this.thumbImg = el;
         this.applyImage(this.currentLast() ?? page);
       },
       () => {

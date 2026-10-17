@@ -71,6 +71,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
   }
 
   hide(): void {
+    this.editing = null;
     this.closeSuggesters();
     this.containerEl.empty();
   }
@@ -131,7 +132,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
 
     new Setting(el)
       .setName('Include subfolders')
-      .setDesc('Also watch folders inside the watch folder, including ones created during a session.')
+      .setDesc('Also watch folders inside the watch folder, including ones created during a session. Applies from the next scan session.')
       .addToggle((t) =>
         t.setValue(settings.includeSubfolders).onChange(async (v) => {
           settings.includeSubfolders = v;
@@ -183,9 +184,10 @@ export class ScanStitchSettingTab extends PluginSettingTab {
           });
         });
     };
-    add('pdf', 'PDF files', 'Files matching *.pdf.');
-    add('jpeg', 'JPEG images', 'Files matching *.jpg and *.jpeg, embedded as full pages.');
-    add('png', 'PNG images', 'Files matching *.png, embedded as full pages.');
+    const later = ' Applies from the next scan session.';
+    add('pdf', 'PDF files', `Files matching *.pdf.${later}`);
+    add('jpeg', 'JPEG images', `Files matching *.jpg and *.jpeg, embedded as full pages.${later}`);
+    add('png', 'PNG images', `Files matching *.png, embedded as full pages.${later}`);
   }
 
   // --- Detecting new scans --------------------------------------------------------
@@ -223,7 +225,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
     };
     numeric(
       'Stability delay (ms)',
-      'How long a new file must stay unchanged before it counts.',
+      'How long a new file must stay unchanged before it counts. Applies from the next scan session.',
       100,
       30000,
       () => settings.stabilityDelayMs,
@@ -233,7 +235,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
     );
     numeric(
       'Stability retries',
-      'How many times to re-check a file that is still being written.',
+      'How many times to re-check a file that is still being written. Applies from the next scan session.',
       1,
       20,
       () => settings.stabilityRetries,
@@ -281,6 +283,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
           .setIcon('pencil')
           .setTooltip('Edit')
           .onClick(() => {
+            if (this.editing) return;
             this.editing = { original: t.name, name: t.name, pattern: t.pattern, folder: t.folder ?? '' };
             this.display();
           }),
