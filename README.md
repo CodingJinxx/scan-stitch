@@ -11,6 +11,8 @@
 
 <img alt="A scan session in Obsidian: the start dialog, pages arriving in the side pane as the counter rises, Discard last, End session, the crooked pages rotated in the review screen, then Save and open shows the merged PDF." src="assets/demo.gif" width="800">
 
+<a href="https://buymeacoffee.com/codingjinxx"><img src="assets/coffee-button.svg" alt="Buy me a coffee" width="220"></a>
+
 </div>
 
 ## Why
@@ -237,6 +239,12 @@ node scripts/make-demo-scans.mjs --drip <stagedDir> <scannerDir> 4   # copies on
 ```
 
 The defaults are `C:\Dev\scan-stitch-demo\vault` for the vault; see the comments at the top of each script for all options. The full manual test plan is in [docs/qa-checklist.md](docs/qa-checklist.md); the design is in [docs/superpowers/specs/2026-10-17-scan-stitch-design.md](docs/superpowers/specs/2026-10-17-scan-stitch-design.md).
+
+## Support
+
+Scan Stitch is free and open source. If it saves you time, you can buy me a coffee; it is never expected, and it helps me keep maintaining it.
+
+<a href="https://buymeacoffee.com/codingjinxx"><img src="assets/coffee-button.svg" alt="Buy me a coffee" width="220"></a>
 
 ## Contributing
 
