@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scan Stitch</title>
+<meta name="description" content="An Obsidian plugin that turns a scanner's one-file-per-page output into a single, correctly rotated PDF in your vault.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F7F6FC" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141026" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Scan Stitch">
+<meta property="og:description" content="Scan a stack of pages, fix rotation with one key, save one PDF into your Obsidian vault.">
+<meta property="og:image" content="https://codingjinxx.github.io/scan-stitch/assets/social-preview.png">
+<link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+<link rel="icon" type="image/png" href="assets/logo.png">
+<style>
+  :root {
+    --bg: #F7F6FC;
+    --surface: #FFFFFF;
+    --ink: #24165F;
+    --muted: #574F7E;
+    --rule: #DDD7F2;
+    --accent: #5A3FD0;
+    --accent-ink: #FFFFFF;
+    --sheet-back: #C3B6FF;
+    --key-face: #FFFFFF;
+    --key-edge: #C9C1EA;
+    --shadow: 0 1px 2px rgb(36 22 95 / 0.08), 0 12px 32px -12px rgb(36 22 95 / 0.25);
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --gutter: 16px;
+    --measure: 62ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141026;
+      --surface: #1D1838;
+      --ink: #F1EDFF;
+      --muted: #B6AEDA;
+      --rule: #342D5C;
+      --accent: #A996FF;
+      --accent-ink: #141026;
+      --sheet-back: #4A3BA0;
+      --key-face: #262049;
+      --key-edge: #4A4280;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.6);
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 400 1.0625rem/1.6 var(--sans);
+    overflow-x: hidden;
+  }
+  img { max-width: 100%; height: auto; display: block; }
+  a { color: var(--accent); text-underline-offset: 0.18em; }
+  a:focus-visible, .button:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+  .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 var(--gutter); }
+  @media (min-width: 720px) { :root { --gutter: 32px; } }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .skip { position: absolute; left: -9999px; }
+  .skip:focus { left: var(--gutter); top: 8px; background: var(--surface); padding: 8px 12px; z-index: 10; }
+
+  /* Header */
+  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 20px; padding-bottom: 20px; }
+  .site-header img { width: 188px; }
+  .site-header nav { display: flex; gap: 20px; font-weight: 600; font-size: 0.975rem; }
+  .site-header nav a { color: var(--ink); text-decoration: none; }
+  .site-header nav a:hover { color: var(--accent); }
+  @media (max-width: 480px) { .site-header .nav-install { display: none; } .site-header img { width: 160px; } }
+
+  /* Hero */
+  .hero { padding: 40px 0 24px; }
+  @media (min-width: 720px) { .hero { padding: 72px 0 32px; } }
+  h1 {
+    font-size: clamp(2.5rem, 7.2vw, 5rem);
+    line-height: 0.98;
+    letter-spacing: -0.035em;
+    font-weight: 800;
+    margin: 0 0 24px;
+    max-width: 13ch;
+    text-wrap: balance;
+  }
+  .lede { font-size: clamp(1.125rem, 2.2vw, 1.3125rem); color: var(--muted); max-width: 46ch; margin: 0 0 32px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .button {
+    display: inline-flex; align-items: center; min-height: 48px; padding: 0 22px;
+    border-radius: 999px; font-weight: 650; text-decoration: none;
+    border: 2px solid var(--accent);
+  }
+  .button.primary { background: var(--accent); color: var(--accent-ink); }
+  .button.secondary { color: var(--accent); }
+  .button:hover { filter: brightness(1.08); }
+
+  /* The stack: the demo as a top sheet laid on a tilted second sheet, like the logo. */
+  .stack { margin: 56px 0 0; }
+  .stack-sheets { position: relative; margin: 0 auto; max-width: 960px; }
+  .stack-sheets::before {
+    content: ""; position: absolute; inset: 0;
+    background: var(--sheet-back);
+    border-radius: 14px;
+    transform: rotate(-2.4deg) translate(-1.5%, 2%);
+  }
+  .stack-sheets img {
+    position: relative; width: 100%;
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .stack-sheets::before { animation: settle 900ms cubic-bezier(.2,.7,.2,1) 200ms both; }
+    @keyframes settle {
+      from { transform: rotate(0deg) translate(0, 0); }
+      to { transform: rotate(-2.4deg) translate(-1.5%, 2%); }
+    }
+  }
+  .stack figcaption { margin: 28px auto 0; max-width: 960px; color: var(--muted); font-size: 0.975rem; }
+
+  /* Sections */
+  section { padding: 56px 0; }
+  @media (min-width: 720px) { section { padding: 88px 0; } }
+  h2 { font-size: clamp(1.75rem, 3.6vw, 2.5rem); line-height: 1.1; letter-spacing: -0.025em; font-weight: 750; margin: 0 0 16px; text-wrap: balance; }
+  h3 { font-size: 1.375rem; line-height: 1.2; letter-spacing: -0.015em; font-weight: 700; margin: 0 0 12px; }
+  p { margin: 0 0 16px; max-width: var(--measure); }
+  .why p { font-size: 1.1875rem; max-width: 58ch; }
+  .why { border-top: 1px solid var(--rule); }
+
+  .feature { display: grid; gap: 24px; align-items: center; }
+  .feature + .feature { margin-top: 64px; }
+  .feature ul { margin: 0; padding-left: 1.2em; color: var(--muted); }
+  .feature li { margin: 4px 0; max-width: 52ch; }
+  .feature figure { margin: 0; }
+  .feature figure img { border-radius: 10px; border: 1px solid var(--rule); box-shadow: var(--shadow); }
+  @media (min-width: 900px) {
+    .feature { grid-template-columns: 4fr 7fr; gap: 56px; }
+    .feature:nth-of-type(even) { grid-template-columns: 7fr 4fr; }
+    .feature:nth-of-type(even) > .feature-text { order: 2; }
+    .feature + .feature { margin-top: 96px; }
+  }
+
+  /* Keyboard strip */
+  .keys { background: var(--surface); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+  .keys p { color: var(--muted); }
+  .keymap { list-style: none; padding: 0; margin: 32px 0 0; display: flex; flex-wrap: wrap; gap: 14px 28px; }
+  .keymap li { display: flex; align-items: center; gap: 10px; }
+  kbd {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 2.4em; height: 2.4em; padding: 0 0.7em;
+    font: 650 0.95rem/1 var(--sans);
+    color: var(--ink);
+    background: var(--key-face);
+    border: 1px solid var(--key-edge);
+    border-bottom-width: 4px;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  /* Keys inside running text sit on the line instead of standing like keycaps. */
+  p kbd, .feature li kbd { height: 1.75em; min-width: 1.75em; padding: 0 0.45em; font-size: 0.85em; border-bottom-width: 2px; border-radius: 6px; vertical-align: 0.05em; }
+  .keymap .plus { color: var(--muted); font-weight: 600; }
+  .keymap .label { color: var(--muted); }
+
+  /* Privacy */
+  .privacy-grid { display: grid; gap: 24px 48px; margin-top: 24px; }
+  .privacy-grid div { border-left: 3px solid var(--sheet-back); padding-left: 16px; }
+  .privacy-grid p { color: var(--muted); margin: 0; }
+  .privacy-grid h3 { font-size: 1.125rem; margin-bottom: 6px; }
+  @media (min-width: 720px) { .privacy-grid { grid-template-columns: 1fr 1fr; } }
+
+  /* Install */
+  .install { border-top: 1px solid var(--rule); }
+  .install-grid { display: grid; gap: 32px; align-items: start; }
+  @media (min-width: 900px) { .install-grid { grid-template-columns: 6fr 6fr; gap: 56px; } }
+  .steps { margin: 16px 0 24px; padding-left: 1.4em; }
+  .steps li { margin: 10px 0; padding-left: 4px; max-width: 54ch; }
+  code {
+    font-family: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.9em; background: var(--surface); border: 1px solid var(--rule);
+    padding: 0.08em 0.35em; border-radius: 5px; overflow-wrap: anywhere;
+  }
+  .note { color: var(--muted); font-size: 0.975rem; }
+  .install figure { margin: 0; }
+  .install figure img { border-radius: 10px; border: 1px solid var(--rule); box-shadow: var(--shadow); }
+  .install figcaption { color: var(--muted); font-size: 0.925rem; margin-top: 12px; }
+
+  /* Footer */
+  footer { border-top: 1px solid var(--rule); padding: 32px 0 48px; color: var(--muted); font-size: 0.925rem; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 32px; justify-content: space-between; align-items: center; }
+  footer p { margin: 0; max-width: none; }
+  footer img { width: 28px; height: 28px; }
+  .footer-brand { display: flex; align-items: center; gap: 12px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap">
+    <a href="./" aria-label="Scan Stitch home">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="assets/logo-wordmark-dark.svg">
+        <img src="assets/logo-wordmark-light.svg" alt="Scan Stitch" width="188" height="42">
+      </picture>
+    </a>
+    <nav aria-label="Site">
+      <a class="nav-install" href="#install">Install</a>
+      <a href="https://github.com/CodingJinxx/scan-stitch">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="hero">
+    <div class="wrap">
+      <h1>Scan a stack. Save one PDF.</h1>
+      <p class="lede">An Obsidian plugin for scanners that save one file per page. Scan as usual, turn the wrong-way pages with a single key, and get one merged PDF in your vault.</p>
+      <div class="actions">
+        <a class="button primary" href="#install">Install Scan Stitch</a>
+        <a class="button secondary" href="https://github.com/CodingJinxx/scan-stitch">Source on GitHub</a>
+      </div>
+
+      <figure class="stack">
+        <div class="stack-sheets">
+          <img src="assets/demo.gif" width="960" height="600" alt="Screen recording of a scan session in Obsidian: pages arrive in the side pane and the counter rises, the last page is discarded, then the review screen rotates the wrong-way pages and saves one PDF.">
+        </div>
+        <figcaption>A full session in a demo vault: pages arrive while scanning, the last page is discarded, wrong-way pages are rotated in review, and the stack is saved as one PDF. All pages are synthetic.</figcaption>
+      </figure>
+    </div>
+  </div>
+
+  <section class="why" aria-labelledby="why-title">
+    <div class="wrap">
+      <h2 id="why-title">Made for scanners that think in pages</h2>
+      <p>Many flatbed and sheet-fed scanners write <code>IMG_0001.pdf</code>, <code>IMG_0002.pdf</code> and so on into a folder, often starting over in a new folder every day. Turning that pile into one document, every page the right way up, is fiddly by hand. Scan Stitch watches the folder while you scan and hands you the finished PDF.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="features-title">
+    <div class="wrap">
+      <h2 id="features-title" class="sr-only">What it does</h2>
+
+      <article class="feature">
+        <div class="feature-text">
+          <h3>Pages show up while you scan</h3>
+          <p>Start a session and feed the scanner. A side pane counts the pages and previews the last one as each file finishes writing.</p>
+          <ul>
+            <li>Works with any scanner that saves PDF, JPEG or PNG files into a folder, including one subfolder per day.</li>
+            <li>Scanned a page twice? <strong>Discard last</strong> drops it from the session. The file itself stays put.</li>
+            <li>If Obsidian closes, the session is offered for resume next time.</li>
+          </ul>
+        </div>
+        <figure>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/scan-pane-dark.png">
+            <img src="assets/screenshots/scan-pane-light.png" width="1440" height="900" loading="lazy" alt="The scanning side pane in Obsidian showing 7 pages, a preview of the last page, and the Discard last and End session buttons.">
+          </picture>
+        </figure>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
+          <h3>Fix rotation with one key</h3>
+          <p>End the session and the review screen opens on page 1: one large page and a filmstrip, all driven from the keyboard.</p>
+          <ul>
+            <li><kbd>R</kbd> turns a page clockwise, <kbd>Shift</kbd> + <kbd>R</kbd> the other way.</li>
+            <li>Shift+click a range in the filmstrip to turn a whole batch at once.</li>
+            <li>Drag thumbnails to reorder, <kbd>Del</kbd> to remove, <kbd>Ctrl</kbd> + <kbd>Z</kbd> to undo.</li>
+          </ul>
+        </div>
+        <figure>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/review-filmstrip-selection-dark.png">
+            <img src="assets/screenshots/review-filmstrip-selection-light.png" width="1440" height="900" loading="lazy" alt="The review screen with page 6 of 10 shown large and four pages selected in the filmstrip below; rotated pages carry a small marker.">
+          </picture>
+        </figure>
+      </article>
+
+      <article class="feature">
+        <div class="feature-text">
+          <h3>Saved where it belongs, named the way you like</h3>
+          <p>Choose the destination when you start. Your last five folders are one click away, and named templates build the file name.</p>
+          <ul>
+            <li>Placeholders such as <code>{date}</code>, <code>{counter}</code>, <code>{pages}</code> and <code>{folder}</code>, with a live preview.</li>
+            <li>Never overwrites: an existing name gets <code> 2</code>, <code> 3</code> added.</li>
+            <li>Or append the new pages to a PDF already in your vault, verified before the original is replaced.</li>
+          </ul>
+        </div>
+        <figure>
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/start-dialog-dark.png">
+            <img src="assets/screenshots/start-dialog-light.png" width="1440" height="900" loading="lazy" alt="The Start scanning dialog with a destination folder, recent folders, a template dropdown, the file name preview and the Append to existing PDF toggle.">
+          </picture>
+        </figure>
+      </article>
+    </div>
+  </section>
+
+  <section class="keys" aria-labelledby="keys-title">
+    <div class="wrap">
+      <h2 id="keys-title">The review screen, by keyboard</h2>
+      <p>Rotate, move and save without reaching for the mouse. On macOS, <kbd>Cmd</kbd> works wherever <kbd>Ctrl</kbd> is shown.</p>
+      <ul class="keymap">
+        <li><kbd>R</kbd><span class="label">rotate clockwise</span></li>
+        <li><kbd>Shift</kbd><span class="plus">+</span><kbd>R</kbd><span class="label">rotate back</span></li>
+        <li><kbd aria-label="Left arrow">←</kbd><kbd aria-label="Right arrow">→</kbd><span class="label">previous, next page</span></li>
+        <li><kbd>Home</kbd><kbd>End</kbd><span class="label">first, last page</span></li>
+        <li><kbd>Del</kbd><span class="label">remove page</span></li>
+        <li><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Z</kbd><span class="label">undo</span></li>
+        <li><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Y</kbd><span class="label">redo</span></li>
+        <li><kbd>Ctrl</kbd><span class="plus">+</span><kbd>A</kbd><span class="label">select all</span></li>
+        <li><kbd>Enter</kbd><span class="label">save</span></li>
+        <li><kbd>Esc</kbd><span class="label">back to scanning</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="privacy-title">
+    <div class="wrap">
+      <h2 id="privacy-title">Your scanner folder stays untouched</h2>
+      <p>Scan Stitch reads files from a folder outside your vault, because that is where your scanner saves them. It is careful about it.</p>
+      <div class="privacy-grid">
+        <div>
+          <h3>Read only outside the vault</h3>
+          <p>It reads PDF, JPEG and PNG files from the scanner folder and never modifies, moves or deletes anything there.</p>
+        </div>
+        <div>
+          <h3>Writes only into your vault</h3>
+          <p>The merged PDF goes into the folder you choose. Nothing is overwritten.</p>
+        </div>
+        <div>
+          <h3>No network, no telemetry</h3>
+          <p>The plugin makes no network requests and needs no account.</p>
+        </div>
+        <div>
+          <h3>Desktop only</h3>
+          <p>Watching a folder outside the vault needs Node's file system access, which Obsidian has on Windows, macOS and Linux.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install" class="install" aria-labelledby="install-title">
+    <div class="wrap install-grid">
+      <div>
+        <h2 id="install-title">Install</h2>
+        <p>The Community plugins listing is pending review. Once it is listed, search for "Scan Stitch" in Settings, Community plugins. Until then, install it by hand:</p>
+        <ol class="steps">
+          <li>Open the <a href="https://github.com/CodingJinxx/scan-stitch/releases/latest">latest release</a> on GitHub.</li>
+          <li>Download <code>main.js</code>, <code>manifest.json</code> and <code>styles.css</code>.</li>
+          <li>Put them in <code>&lt;your vault&gt;/.obsidian/plugins/scan-stitch/</code>.</li>
+          <li>Restart Obsidian and enable Scan Stitch under Community plugins.</li>
+          <li>In its settings, set the watch folder to where your scanner saves.</li>
+        </ol>
+        <p class="note">Needs Obsidian 1.5.0 or newer on desktop. Full documentation, settings and FAQ are in the <a href="https://github.com/CodingJinxx/scan-stitch#readme">README</a>.</p>
+      </div>
+      <figure>
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/settings-dark.png">
+          <img src="assets/screenshots/settings-light.png" width="1440" height="900" loading="lazy" alt="The Scan Stitch settings: watch folder with a Browse button, include subfolders, file types, new-scan detection and filename templates.">
+        </picture>
+        <figcaption>Point it at your scanner folder once; the rest has sensible defaults.</figcaption>
+      </figure>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-brand">
+      <img src="assets/logo.svg" alt="" width="28" height="28">
+      <p>Scan Stitch is open source under the <a href="https://github.com/CodingJinxx/scan-stitch/blob/main/LICENSE">MIT licence</a>. Made by <a href="https://github.com/CodingJinxx">Jay Leimer</a>.</p>
+    </div>
+    <p><a href="https://github.com/CodingJinxx/scan-stitch">GitHub</a> &nbsp; <a href="https://github.com/CodingJinxx/scan-stitch/issues">Report an issue</a></p>
+  </div>
+</footer>
+</body>
+</html>
