@@ -1,6 +1,6 @@
 {
   "name": "scan-stitch",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Combine one-file-per-page scanner output into a single PDF with fast rotation review.",
   "main": "main.js",
   "scripts": {

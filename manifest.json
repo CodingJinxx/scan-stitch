@@ -1,7 +1,7 @@
 {
   "id": "scan-stitch",
   "name": "Scan Stitch",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.5.0",
   "description": "Combine one-file-per-page scanner output into a single PDF with fast rotation review.",
   "author": "Jay Leimer",

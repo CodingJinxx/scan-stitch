@@ -70,6 +70,12 @@ Scan Stitch is **desktop only** and needs Obsidian 1.5.0 or newer. It is tested 
 4. Restart Obsidian or reload plugins, then enable **Scan Stitch** under Settings → Community plugins.
 5. In Settings → Scan Stitch, set **Watch folder** to the folder your scanner saves into.
 
+**Verifying a download (optional):** from 1.0.1 on, the release workflow publishes signed build provenance ([GitHub artifact attestations](https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds)) for `main.js`, `manifest.json` and `styles.css`. With the [GitHub CLI](https://cli.github.com/) you can check that a downloaded file was built by this repository's release workflow:
+
+```sh
+gh attestation verify main.js --repo CodingJinxx/scan-stitch
+```
+
 ### Limitations
 
 - **Windows is the only fully tested platform.** macOS and Linux are untested; they are expected to work through the polling fallback (besides listening for file system events, the folder is rescanned every 3 seconds).
@@ -182,9 +188,12 @@ Obsidian's developer policies ask plugins to explain any access outside the vaul
 
 - **Desktop only.** The plugin uses Node's file system API, which Obsidian provides only on desktop.
 - **Reads files outside your vault.** It reads PDF, JPEG and PNG files from the scanner folder you configure, which is normally outside the vault. That is the whole point: your scanner writes there, and Scan Stitch picks the pages up from there. The **Browse** button in the settings opens your system's local folder picker; nothing is sent anywhere.
+- **Node's `fs` is used only for the scanner folder.** The plugin uses Node's file system module only to list, watch, check and read the files in the scanner folder you configure (and to check that a folder path you type exists). It never writes outside the vault.
 - **Never changes the scanner folder.** It never modifies, moves, renames or deletes anything in it. "Discard last" and "Discard session" only change what the plugin remembers; the files stay.
 - **Writes only into the vault**: the merged PDF in the destination folder, and (in append mode) a temporary backup copy in the plugin's own folder.
+- **Lists vault folders and PDF paths, not note contents.** To fill the destination folder and append target pickers, it lists the vault's folder paths and PDF file paths, and it looks at the file names in the destination folder so a new PDF never overwrites one. It reads no notes: apart from its own files in `.obsidian/plugins/scan-stitch/`, the only vault file it reads is the PDF you choose to append to.
 - **No network access, no telemetry, no account.** The plugin makes no network requests.
+- **Verifiable releases.** From 1.0.1 on, `main.js`, `manifest.json` and `styles.css` in each release carry GitHub artifact attestations (signed build provenance); see [Install](#install) for the `gh attestation verify` command.
 - **Session state** (scanner folder path, destination, template, the list of page file paths with their rotations, discarded paths, start time) is stored in the plugin's `data.json` in `.obsidian/plugins/scan-stitch/`, together with your settings and recent folders.
 
 ## FAQ

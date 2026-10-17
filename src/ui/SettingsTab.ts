@@ -1,9 +1,11 @@
 import * as fs from 'fs';
-import { Notice, PluginSettingTab, Setting, moment } from 'obsidian';
-import type { App } from 'obsidian';
+import { Notice, PluginSettingTab, Setting } from 'obsidian';
+import type { App, SettingDefinitionItem } from 'obsidian';
 import { findUnknownPlaceholders } from '../core/template';
 import type ScanStitchPlugin from '../main';
+import { formatDate } from './dateFormat';
 import { FolderSuggest } from './FolderSuggest';
+import { renderSections, toDefinitions, type SectionItem, type SettingRow, type SettingSection } from './settingSections';
 import {
   addTemplate,
   deleteTemplate,
@@ -51,6 +53,8 @@ function filePath(file: File): string {
 export class ScanStitchSettingTab extends PluginSettingTab {
   private editing: Editing | null = null;
   private suggesters: { close(): void }[] = [];
+  /** Set once Obsidian (1.13+) asks for definitions: it then renders them and never calls display(). */
+  private declarative = false;
 
   constructor(
     app: App,
@@ -59,21 +63,47 @@ export class ScanStitchSettingTab extends PluginSettingTab {
     super(app, plugin);
   }
 
+  /** Obsidian 1.13+: rendered from these definitions and indexed for the settings search. */
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    this.declarative = true;
+    return toDefinitions(this.sections());
+  }
+
+  /** Obsidian < 1.13: the same sections, drawn imperatively. */
   display(): void {
-    this.closeSuggesters();
-    const { containerEl } = this;
-    containerEl.empty();
-    this.buildFolder(containerEl);
-    this.buildFileTypes(containerEl);
-    this.buildStability(containerEl);
-    this.buildTemplates(containerEl);
-    this.buildRecents(containerEl);
+    this.renderImperative();
   }
 
   hide(): void {
     this.editing = null;
     this.closeSuggesters();
+    super.hide();
     this.containerEl.empty();
+  }
+
+  /** Redraws after a structural change (template added, edited or removed, recents cleared). */
+  private rerender(): void {
+    // update() exists from 1.13, the only versions that call getSettingDefinitions().
+    const tab = this as unknown as { update?: () => void };
+    if (this.declarative && typeof tab.update === 'function') tab.update();
+    else this.renderImperative();
+  }
+
+  private renderImperative(): void {
+    this.closeSuggesters();
+    const { containerEl } = this;
+    containerEl.empty();
+    renderSections(containerEl, this.sections(), (parent) => new Setting(parent));
+  }
+
+  private sections(): SettingSection[] {
+    return [
+      { heading: 'Scanner folder', items: this.folderItems() },
+      { heading: 'File types', items: this.fileTypeItems() },
+      { heading: 'Detecting new scans', items: this.stabilityItems() },
+      { heading: 'Filename templates', items: this.templateItems() },
+      { heading: 'Recent locations', items: this.recentItems() },
+    ];
   }
 
   private closeSuggesters(): void {
@@ -87,58 +117,76 @@ export class ScanStitchSettingTab extends PluginSettingTab {
 
   // --- Scanner folder -------------------------------------------------------------
 
-  private buildFolder(el: HTMLElement): void {
-    new Setting(el).setName('Scanner folder').setHeading();
+  private folderItems(): SectionItem[] {
     const settings = this.plugin.settings;
-
-    const watch = new Setting(el).setName('Watch folder');
-    const statusEl = watch.descEl.createDiv({ cls: 'scan-stitch-status' });
-    watch.descEl.createDiv({ text: 'Absolute path of the folder your scanner saves into.' });
-    let input!: HTMLInputElement;
-    const showStatus = (path: string): void => {
-      statusEl.removeClass('is-ok', 'is-bad');
-      if (path === '') {
-        statusEl.setText('');
-        return;
-      }
-      const ok = folderExists(path);
-      statusEl.setText(ok ? 'Folder found' : 'Folder not found');
-      statusEl.addClass(ok ? 'is-ok' : 'is-bad');
-    };
-    const commit = async (raw: string): Promise<void> => {
-      const path = raw.trim();
-      input.value = path;
-      showStatus(path);
-      if (path === settings.watchRoot) return;
-      settings.watchRoot = path;
-      await this.save();
-    };
-    watch.addText((t) => {
-      input = t.inputEl;
-      t.setPlaceholder('Path to the scanner folder').setValue(settings.watchRoot);
-      t.inputEl.spellcheck = false;
-      t.inputEl.addEventListener('input', () => showStatus(t.inputEl.value.trim()));
-      t.inputEl.addEventListener('change', () => void commit(t.inputEl.value));
-    });
-    watch.addButton((b) =>
-      b.setButtonText('Browse').onClick(() => {
-        this.browse((path) => {
-          input.value = path;
-          void commit(path);
-        });
-      }),
-    );
-    showStatus(settings.watchRoot.trim());
-
-    new Setting(el)
-      .setName('Include subfolders')
-      .setDesc('Also watch folders inside the watch folder, including ones created during a session. Applies from the next scan session.')
-      .addToggle((t) =>
-        t.setValue(settings.includeSubfolders).onChange(async (v) => {
-          settings.includeSubfolders = v;
-          await this.save();
-        }),
-      );
+    const watchDesc = 'Absolute path of the folder your scanner saves into.';
+    const subfolderDesc =
+      'Also watch folders inside the watch folder, including ones created during a session. Applies from the next scan session.';
+    return [
+      {
+        kind: 'row',
+        name: 'Watch folder',
+        desc: watchDesc,
+        aliases: ['scanner folder'],
+        render: (watch) => {
+          watch.setName('Watch folder');
+          watch.descEl.empty();
+          const statusEl = watch.descEl.createDiv({ cls: 'scan-stitch-status' });
+          watch.descEl.createDiv({ text: watchDesc });
+          let input!: HTMLInputElement;
+          const showStatus = (path: string): void => {
+            statusEl.removeClass('is-ok', 'is-bad');
+            if (path === '') {
+              statusEl.setText('');
+              return;
+            }
+            const ok = folderExists(path);
+            statusEl.setText(ok ? 'Folder found' : 'Folder not found');
+            statusEl.addClass(ok ? 'is-ok' : 'is-bad');
+          };
+          const commit = async (raw: string): Promise<void> => {
+            const path = raw.trim();
+            input.value = path;
+            showStatus(path);
+            if (path === settings.watchRoot) return;
+            settings.watchRoot = path;
+            await this.save();
+          };
+          watch.addText((t) => {
+            input = t.inputEl;
+            t.setPlaceholder('Path to the scanner folder').setValue(settings.watchRoot);
+            t.inputEl.spellcheck = false;
+            t.inputEl.addEventListener('input', () => showStatus(t.inputEl.value.trim()));
+            t.inputEl.addEventListener('change', () => void commit(t.inputEl.value));
+          });
+          watch.addButton((b) =>
+            b.setButtonText('Browse').onClick(() => {
+              this.browse((path) => {
+                input.value = path;
+                void commit(path);
+              });
+            }),
+          );
+          showStatus(settings.watchRoot.trim());
+        },
+      },
+      {
+        kind: 'row',
+        name: 'Include subfolders',
+        desc: subfolderDesc,
+        aliases: ['scanner folder'],
+        render: (s) => {
+          s.setName('Include subfolders')
+            .setDesc(subfolderDesc)
+            .addToggle((t) =>
+              t.setValue(settings.includeSubfolders).onChange(async (v) => {
+                settings.includeSubfolders = v;
+                await this.save();
+              }),
+            );
+        },
+      },
+    ];
   }
 
   private browse(onPick: (path: string) => void): void {
@@ -158,42 +206,47 @@ export class ScanStitchSettingTab extends PluginSettingTab {
 
   // --- File types -----------------------------------------------------------------
 
-  private buildFileTypes(el: HTMLElement): void {
-    new Setting(el).setName('File types').setHeading();
+  private fileTypeItems(): SectionItem[] {
     const settings = this.plugin.settings;
     const toggles = togglesFromPatterns(settings.patterns);
 
-    const add = (key: keyof PatternToggles, name: string, desc: string): void => {
-      let toggle: { setValue(v: boolean): unknown } | null = null;
-      new Setting(el)
-        .setName(name)
-        .setDesc(desc)
-        .addToggle((t) => {
-          toggle = t;
-          t.setValue(toggles[key]).onChange(async (v) => {
-            const next = { ...toggles, [key]: v };
-            if (!next.pdf && !next.jpeg && !next.png) {
-              // At least one type must stay on.
-              toggle?.setValue(true);
-              new Notice('At least one file type must stay enabled');
-              return;
-            }
-            toggles[key] = v;
-            settings.patterns = patternsFromToggles(toggles);
-            await this.save();
+    const item = (key: keyof PatternToggles, name: string, desc: string): SettingRow => ({
+      kind: 'row',
+      name,
+      desc,
+      aliases: ['file types'],
+      render: (s) => {
+        let toggle: { setValue(v: boolean): unknown } | null = null;
+        s.setName(name)
+          .setDesc(desc)
+          .addToggle((t) => {
+            toggle = t;
+            t.setValue(toggles[key]).onChange(async (v) => {
+              const next = { ...toggles, [key]: v };
+              if (!next.pdf && !next.jpeg && !next.png) {
+                // At least one type must stay on.
+                toggle?.setValue(true);
+                new Notice('At least one file type must stay enabled');
+                return;
+              }
+              toggles[key] = v;
+              settings.patterns = patternsFromToggles(toggles);
+              await this.save();
+            });
           });
-        });
-    };
+      },
+    });
     const later = ' Applies from the next scan session.';
-    add('pdf', 'PDF files', `Files matching *.pdf.${later}`);
-    add('jpeg', 'JPEG images', `Files matching *.jpg and *.jpeg, embedded as full pages.${later}`);
-    add('png', 'PNG images', `Files matching *.png, embedded as full pages.${later}`);
+    return [
+      item('pdf', 'PDF files', `Files matching *.pdf.${later}`),
+      item('jpeg', 'JPEG images', `Files matching *.jpg and *.jpeg, embedded as full pages.${later}`),
+      item('png', 'PNG images', `Files matching *.png, embedded as full pages.${later}`),
+    ];
   }
 
   // --- Detecting new scans --------------------------------------------------------
 
-  private buildStability(el: HTMLElement): void {
-    new Setting(el).setName('Detecting new scans').setHeading();
+  private stabilityItems(): SectionItem[] {
     const settings = this.plugin.settings;
 
     const numeric = (
@@ -203,113 +256,151 @@ export class ScanStitchSettingTab extends PluginSettingTab {
       max: number,
       get: () => number,
       set: (n: number) => void,
-    ): void => {
-      const s = new Setting(el).setName(name).setDesc(desc);
-      const msg = s.descEl.createDiv({ cls: 'scan-stitch-status is-bad' });
-      s.addText((t) => {
-        t.setValue(String(get()));
-        t.inputEl.inputMode = 'numeric';
-        t.inputEl.addEventListener('change', () => {
-          const r = parseBoundedInt(t.inputEl.value, min, max);
-          if (r.ok) {
-            msg.setText('');
-            set(r.value);
-            t.inputEl.value = String(r.value);
-            void this.save();
-          } else {
-            msg.setText(`Enter a whole number from ${min} to ${max}`);
-            t.inputEl.value = String(get());
-          }
+    ): SettingRow => ({
+      kind: 'row',
+      name,
+      desc,
+      aliases: ['detecting new scans'],
+      render: (row) => {
+        const s = row.setName(name).setDesc(desc);
+        const msg = s.descEl.createDiv({ cls: 'scan-stitch-status is-bad' });
+        s.addText((t) => {
+          t.setValue(String(get()));
+          t.inputEl.inputMode = 'numeric';
+          t.inputEl.addEventListener('change', () => {
+            const r = parseBoundedInt(t.inputEl.value, min, max);
+            if (r.ok) {
+              msg.setText('');
+              set(r.value);
+              t.inputEl.value = String(r.value);
+              void this.save();
+            } else {
+              msg.setText(`Enter a whole number from ${min} to ${max}`);
+              t.inputEl.value = String(get());
+            }
+          });
         });
-      });
-    };
-    numeric(
-      'Stability delay (ms)',
-      'How long a new file must stay unchanged before it counts. Applies from the next scan session.',
-      100,
-      30000,
-      () => settings.stabilityDelayMs,
-      (n) => {
-        settings.stabilityDelayMs = n;
       },
-    );
-    numeric(
-      'Stability retries',
-      'How many times to re-check a file that is still being written. Applies from the next scan session.',
-      1,
-      20,
-      () => settings.stabilityRetries,
-      (n) => {
-        settings.stabilityRetries = n;
-      },
-    );
+    });
+    return [
+      numeric(
+        'Stability delay (ms)',
+        'How long a new file must stay unchanged before it counts. Applies from the next scan session.',
+        100,
+        30000,
+        () => settings.stabilityDelayMs,
+        (n) => {
+          settings.stabilityDelayMs = n;
+        },
+      ),
+      numeric(
+        'Stability retries',
+        'How many times to re-check a file that is still being written. Applies from the next scan session.',
+        1,
+        20,
+        () => settings.stabilityRetries,
+        (n) => {
+          settings.stabilityRetries = n;
+        },
+      ),
+    ];
   }
 
   // --- Filename templates ---------------------------------------------------------
 
-  private buildTemplates(el: HTMLElement): void {
-    new Setting(el).setName('Filename templates').setHeading();
+  private templateItems(): SectionItem[] {
     const settings = this.plugin.settings;
-
-    const help = el.createEl('details', { cls: 'scan-stitch-help' });
-    help.createEl('summary', { text: 'Supported placeholders' });
-    const list = help.createEl('ul');
-    for (const p of describePlaceholders()) {
-      const li = list.createEl('li');
-      li.createEl('code', { text: p.token });
-      li.appendText(` ${p.description}`);
-    }
+    const items: SectionItem[] = [
+      {
+        kind: 'block',
+        name: 'Supported placeholders',
+        build: (el) => {
+          const help = el.createEl('details', { cls: 'scan-stitch-help' });
+          help.createEl('summary', { text: 'Supported placeholders' });
+          const list = help.createEl('ul');
+          for (const p of describePlaceholders()) {
+            const li = list.createEl('li');
+            li.createEl('code', { text: p.token });
+            li.appendText(` ${p.description}`);
+          }
+        },
+      },
+    ];
 
     for (const t of settings.templates) {
       if (this.editing?.original === t.name) continue;
       const isDefault = t.name === settings.defaultTemplate;
-      const row = new Setting(el)
-        .setName(isDefault ? `${t.name} (default)` : t.name)
-        .setDesc(t.folder ? `${t.pattern}  \u2192  ${t.folder}` : t.pattern);
-      if (!isDefault) {
-        row.addExtraButton((b) =>
-          b
-            .setIcon('star')
-            .setTooltip('Set as default')
-            .onClick(async () => {
-              settings.defaultTemplate = t.name;
-              await this.save();
-              this.display();
-            }),
-        );
-      }
-      row.addExtraButton((b) =>
-        b
-          .setIcon('pencil')
-          .setTooltip('Edit')
-          .onClick(() => {
-            if (this.editing) return;
-            this.editing = { original: t.name, name: t.name, pattern: t.pattern, folder: t.folder ?? '' };
-            this.display();
-          }),
-      );
-      row.addExtraButton((b) => {
-        b.setIcon('trash')
-          .setTooltip(settings.templates.length <= 1 ? 'The last template cannot be deleted' : 'Delete')
-          .onClick(async () => {
-            if (!deleteTemplate(settings, t.name)) return;
-            await this.save();
-            this.display();
+      const name = isDefault ? `${t.name} (default)` : t.name;
+      const desc = t.folder ? `${t.pattern}  \u2192  ${t.folder}` : t.pattern;
+      items.push({
+        kind: 'row',
+        name,
+        desc,
+        aliases: ['filename templates'],
+        render: (row) => {
+          row.setName(name).setDesc(desc);
+          if (!isDefault) {
+            row.addExtraButton((b) =>
+              b
+                .setIcon('star')
+                .setTooltip('Set as default')
+                .onClick(async () => {
+                  settings.defaultTemplate = t.name;
+                  await this.save();
+                  this.rerender();
+                }),
+            );
+          }
+          row.addExtraButton((b) =>
+            b
+              .setIcon('pencil')
+              .setTooltip('Edit')
+              .onClick(() => {
+                if (this.editing) return;
+                this.editing = { original: t.name, name: t.name, pattern: t.pattern, folder: t.folder ?? '' };
+                this.rerender();
+              }),
+          );
+          row.addExtraButton((b) => {
+            b.setIcon('trash')
+              .setTooltip(settings.templates.length <= 1 ? 'The last template cannot be deleted' : 'Delete')
+              .onClick(async () => {
+                if (!deleteTemplate(settings, t.name)) return;
+                await this.save();
+                this.rerender();
+              });
+            if (settings.templates.length <= 1) b.setDisabled(true);
           });
-        if (settings.templates.length <= 1) b.setDisabled(true);
+        },
       });
     }
 
-    if (this.editing) {
-      this.buildEditor(el, this.editing);
+    const editing = this.editing;
+    if (editing) {
+      items.push({
+        kind: 'block',
+        name: 'Edit template',
+        build: (el) => {
+          this.buildEditor(el, editing);
+          return () => this.closeSuggesters();
+        },
+      });
     } else {
-      new Setting(el).addButton((b) =>
-        b.setButtonText('Add template').onClick(() => {
-          this.editing = { original: null, name: '', pattern: 'Scan {date} {time}', folder: '' };
-          this.display();
-        }),
-      );
+      items.push({
+        kind: 'row',
+        name: 'Add template',
+        aliases: ['filename templates'],
+        render: (row) => {
+          row.setName('').addButton((b) =>
+            b.setButtonText('Add template').onClick(() => {
+              this.editing = { original: null, name: '', pattern: 'Scan {date} {time}', folder: '' };
+              this.rerender();
+            }),
+          );
+        },
+      });
     }
+    return items;
   }
 
   private buildEditor(el: HTMLElement, ed: Editing): void {
@@ -329,7 +420,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
         now: new Date(),
         folder: folderName,
         existingNames: [],
-        format: (d, fmt) => moment(d).format(fmt),
+        format: formatDate,
       });
       previewEl.setText(`Preview: ${preview}.pdf`);
       const err = validateTemplate(settings.templates, ed, ed.original ?? undefined);
@@ -369,7 +460,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
       .addButton((b) =>
         b.setButtonText('Cancel').onClick(() => {
           this.editing = null;
-          this.display();
+          this.rerender();
         }),
       )
       .addButton((b) =>
@@ -386,7 +477,7 @@ export class ScanStitchSettingTab extends PluginSettingTab {
             else updateTemplate(settings, ed.original, ed);
             this.editing = null;
             await this.save();
-            this.display();
+            this.rerender();
           }),
       );
 
@@ -395,22 +486,32 @@ export class ScanStitchSettingTab extends PluginSettingTab {
 
   // --- Recent locations -----------------------------------------------------------
 
-  private buildRecents(el: HTMLElement): void {
-    new Setting(el).setName('Recent locations').setHeading();
+  private recentItems(): SectionItem[] {
     const settings = this.plugin.settings;
     const n = settings.recentLocations.length;
-    new Setting(el)
-      .setName('Recent destination folders')
-      .setDesc(n === 1 ? '1 location stored' : `${n} locations stored`)
-      .addButton((b) =>
-        b
-          .setButtonText('Clear')
-          .setDisabled(n === 0)
-          .onClick(async () => {
-            settings.recentLocations = [];
-            await this.save();
-            this.display();
-          }),
-      );
+    const desc = n === 1 ? '1 location stored' : `${n} locations stored`;
+    return [
+      {
+        kind: 'row',
+        name: 'Recent destination folders',
+        desc,
+        aliases: ['recent locations'],
+        render: (row) => {
+          row
+            .setName('Recent destination folders')
+            .setDesc(desc)
+            .addButton((b) =>
+              b
+                .setButtonText('Clear')
+                .setDisabled(n === 0)
+                .onClick(async () => {
+                  settings.recentLocations = [];
+                  await this.save();
+                  this.rerender();
+                }),
+            );
+        },
+      },
+    ];
   }
 }
