@@ -355,6 +355,66 @@ describe('SessionController', () => {
       expect(persisted.at(-1)?.pages).toHaveLength(1);
     });
 
+    /** Like the real watcher: start() reports root-missing at once when the root is not there. */
+    function reportMissingRootOnStart(): void {
+      const create = deps.createWatcher!;
+      deps.createWatcher = (opts) => {
+        const w = create(opts);
+        const start = w.start.bind(w);
+        w.start = () => {
+          start();
+          if (!fs.existsSync(opts.root)) opts.onProblem({ reason: 'root-missing' });
+        };
+        return w;
+      };
+    }
+
+    it('review resume with a missing root revalidates on backToScanning once the root is back', async () => {
+      reportMissingRootOnStart();
+      const root = path.join(tmp, 'drive');
+      const real = path.join(root, 'real.pdf');
+      const gone = path.join(root, 'gone.pdf');
+      const c = new SessionController(deps);
+      await c.resume(data({ phase: 'review', watchRoot: root, pages: [mkPage(real), mkPage(gone)] }));
+      expect(c.state?.data.pages).toHaveLength(2);
+      expect(watchers).toHaveLength(0);
+      fs.mkdirSync(root);
+      fs.writeFileSync(real, 'x');
+      c.backToScanning();
+      await flush();
+      expect(c.state?.data.phase).toBe('scanning');
+      expect(c.state?.data.pages.map((p) => p.path)).toEqual([real]);
+      expect(notes.filter((n) => n.includes('no longer available'))).toHaveLength(1);
+      expect(persisted.at(-1)?.pages).toHaveLength(1);
+      expect(persisted.at(-1)?.phase).toBe('scanning');
+      expect(watchers).toHaveLength(1);
+      expect(watchers[0].started).toBe(1);
+      // the check ran once; a later restore does not drop anything again
+      watchers[0].opts.onProblem({ reason: 'root-restored' });
+      await flush();
+      expect(notes.filter((n) => n.includes('no longer available'))).toHaveLength(1);
+    });
+
+    it('review resume with a missing root: backToScanning while still missing notifies, then revalidates on restore', async () => {
+      reportMissingRootOnStart();
+      const root = path.join(tmp, 'drive');
+      const real = path.join(root, 'real.pdf');
+      const gone = path.join(root, 'gone.pdf');
+      const c = new SessionController(deps);
+      await c.resume(data({ phase: 'review', watchRoot: root, pages: [mkPage(real), mkPage(gone)] }));
+      const unavailable = (): number => notes.filter((n) => n === 'Scanner folder is unavailable').length;
+      expect(unavailable()).toBe(1);
+      c.backToScanning();
+      await flush();
+      expect(unavailable()).toBe(2);
+      expect(c.state?.data.pages).toHaveLength(2);
+      fs.mkdirSync(root);
+      fs.writeFileSync(real, 'x');
+      watchers[0].opts.onProblem({ reason: 'root-restored' });
+      await flush();
+      expect(c.state?.data.pages.map((p) => p.path)).toEqual([real]);
+    });
+
     it('review phase does not keep a watcher running', async () => {
       const c = new SessionController(deps);
       await c.resume(data({ phase: 'review' }));

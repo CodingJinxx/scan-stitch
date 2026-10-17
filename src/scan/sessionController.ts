@@ -81,8 +81,6 @@ export class SessionController {
       return;
     }
     this.reset();
-    this.revalidateOnRestore = false;
-    this.swallowRootMissing = false;
     let pages = clean.pages;
     const root = clean.watchRoot || this.deps.settings().watchRoot;
     if (!this.rootAccessible(root)) {
@@ -122,6 +120,12 @@ export class SessionController {
     const s = this.session;
     if (!s || s.data.phase !== 'review') return;
     s.data.phase = 'scanning';
+    // The first-watcher swallow belongs to resume(); this watcher's root-missing is news.
+    this.swallowRootMissing = false;
+    // Resumed while the root was away: no watcher saw it return, so check the pages now.
+    if (this.revalidateOnRestore && this.rootAccessible(s.data.watchRoot || this.deps.settings().watchRoot)) {
+      this.revalidate();
+    }
     this.startWatcher();
     this.changed();
   }
@@ -218,6 +222,8 @@ export class SessionController {
     this.generation++;
     this.bad.clear();
     this.fileChain = Promise.resolve();
+    this.revalidateOnRestore = false;
+    this.swallowRootMissing = false;
   }
 
   private startWatcher(): FolderWatcher {
