@@ -1,9 +1,28 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { setTimeout as nodeSetTimeout } from 'timers';
 import { createFolderWatcher, type FolderWatcher, type WatcherOptions } from '../../src/scan/folderWatcher';
+
+const counts = vi.hoisted(() => ({ readdir: 0, stats: [] as string[] }));
+
+// Counting wrappers: ESM namespaces of node builtins cannot be spied on directly.
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  const wrapped = {
+    ...actual,
+    readdirSync: ((...args: unknown[]) => {
+      counts.readdir++;
+      return (actual.readdirSync as (...a: unknown[]) => unknown)(...args);
+    }) as typeof actual.readdirSync,
+    statSync: ((...args: unknown[]) => {
+      counts.stats.push(String(args[0]));
+      return (actual.statSync as (...a: unknown[]) => unknown)(...args);
+    }) as typeof actual.statSync,
+  };
+  return { ...wrapped, default: wrapped };
+});
 
 const sleep = (ms: number) => new Promise((r) => nodeSetTimeout(r, ms));
 
@@ -201,5 +220,94 @@ describe('folderWatcher', () => {
     w.stop();
     await sleep(500);
     expect(files).toEqual([]);
+  });
+
+  it('coalesces a burst of writes into far fewer directory walks', async () => {
+    make({ pollIntervalMs: 60000 }).start();
+    await sleep(50);
+    counts.readdir = 0;
+    const N = 40;
+    for (let i = 0; i < N; i++) {
+      fs.writeFileSync(path.join(root, `b${i}.pdf`), 'data');
+      await sleep(5);
+    }
+    expect(await waitFor(() => files.length === N, 5000)).toBe(true);
+    expect(counts.readdir).toBeLessThan(N / 2);
+  });
+
+  it('does not re-stat files older than since on later passes', async () => {
+    for (let i = 0; i < 5; i++) fs.writeFileSync(path.join(root, `old${i}.pdf`), 'data');
+    await sleep(60);
+    const w = make({ since: Date.now(), pollIntervalMs: 60000 });
+    w.start();
+    await w.rescan();
+    counts.stats = [];
+    await w.rescan();
+    await w.rescan();
+    await w.rescan();
+    const oldStats = counts.stats.filter((p) => p.includes('old'));
+    expect(oldStats).toHaveLength(0);
+  });
+
+  it('reports a permanently zero-byte file once across many rescans, then emits after rewrite', async () => {
+    const w = make({ pollIntervalMs: 60000 });
+    const p = path.join(root, 'zero.pdf');
+    fs.writeFileSync(p, '');
+    w.start();
+    for (let i = 0; i < 4; i++) await w.rescan();
+    expect(problems.filter((x) => x.reason === 'unreadable')).toHaveLength(1);
+    expect(files).toEqual([]);
+    fs.writeFileSync(p, 'content');
+    await w.rescan();
+    expect(files).toEqual([p]);
+  });
+
+  it('keeps going when onFile throws', async () => {
+    let calls = 0;
+    make({
+      onFile: (e) => {
+        calls++;
+        files.push(e.path);
+        if (calls === 1) throw new Error('consumer bug');
+      },
+    }).start();
+    fs.writeFileSync(path.join(root, 'a.pdf'), 'data');
+    await sleep(150);
+    const b = path.join(root, 'b.pdf');
+    fs.writeFileSync(b, 'data');
+    expect(await waitFor(() => files.includes(b))).toBe(true);
+  });
+
+  it('keeps going when onProblem throws', async () => {
+    make({
+      onProblem: () => {
+        throw new Error('consumer bug');
+      },
+    }).start();
+    fs.writeFileSync(path.join(root, 'z.pdf'), '');
+    await sleep(200);
+    const b = path.join(root, 'b.pdf');
+    fs.writeFileSync(b, 'data');
+    expect(await waitFor(() => files.includes(b))).toBe(true);
+  });
+
+  it('reports a locked file once, retries without re-reporting, and emits when it unlocks', async () => {
+    let locked = true;
+    const p = path.join(root, 'locked.pdf');
+    const w = make({
+      pollIntervalMs: 60000,
+      probeReadable: () => {
+        if (locked) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+      },
+    });
+    fs.writeFileSync(p, 'data');
+    w.start();
+    for (let i = 0; i < 3; i++) await w.rescan();
+    expect(files).toEqual([]);
+    expect(problems.filter((x) => x.reason === 'unreadable')).toEqual([{ path: p, reason: 'unreadable' }]);
+    locked = false;
+    await w.rescan();
+    expect(files).toEqual([p]);
+    expect(problems.filter((x) => x.reason === 'unreadable')).toHaveLength(1);
   });
 });

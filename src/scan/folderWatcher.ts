@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
+// Node's timers on purpose: the lint rule obsidianmd/prefer-window-timers forbids the globals
+// and eslint-disable is not allowed, and the plugin is desktop-only so Node builtins are available.
 import { setTimeout as nodeSetTimeout, clearTimeout as nodeClearTimeout, setInterval as nodeSetInterval, clearInterval as nodeClearInterval } from 'timers';
 import { matchesAnyPattern } from '../core/patterns';
 
@@ -14,6 +16,8 @@ export interface WatcherOptions {
   ignore: (path: string) => boolean;
   onFile: (e: { path: string; seenAt: number }) => void;
   onProblem: (e: { path?: string; reason: 'unreadable' | 'root-missing' | 'root-restored' }) => void;
+  /** Read-only open probe; throws if the file is locked. Defaults to openSync/closeSync. Test seam. */
+  probeReadable?: (path: string) => void;
 }
 
 export interface FolderWatcher {
@@ -23,6 +27,14 @@ export interface FolderWatcher {
 }
 
 const DEFAULT_POLL_MS = 3000;
+const EVENT_DEBOUNCE_MS = 150;
+const TOO_OLD_MAX = 5000;
+const LOCK_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
+
+function defaultProbe(file: string): void {
+  const fd = fs.openSync(file, 'r');
+  fs.closeSync(fd);
+}
 
 /**
  * Watches a scanner folder (read only: nothing is ever written, renamed or
@@ -30,15 +42,39 @@ const DEFAULT_POLL_MS = 3000;
  * polling fallback.
  */
 export function createFolderWatcher(opts: WatcherOptions): FolderWatcher {
+  const probe = opts.probeReadable ?? defaultProbe;
   const emitted = new Set<string>();
-  const inFlight = new Set<string>();
-  // paths we reported as unreadable, with the size seen when giving up
-  const gaveUp = new Map<string, number>();
+  const inFlight = new Map<string, Promise<void>>();
+  // paths reported unreadable, with the size:mtime marker seen when giving up
+  const gaveUp = new Map<string, string>();
+  // locked paths already reported (retried every pass, never re-reported)
+  const lockReported = new Set<string>();
+  // paths whose birth/mtime is before `since`; skipped without a stat
+  const tooOld = new Set<string>();
   const sleepers = new Set<{ timer: ReturnType<typeof setTimeout>; resolve: () => void }>();
   let running = false;
   let rootOk = true;
   let fsWatcher: fs.FSWatcher | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let scanning: Promise<void> | null = null;
+  let dirty = false;
+
+  function fireFile(file: string): void {
+    try {
+      opts.onFile({ path: file, seenAt: Date.now() });
+    } catch {
+      // the consumer owns its errors
+    }
+  }
+
+  function fireProblem(e: { path?: string; reason: 'unreadable' | 'root-missing' | 'root-restored' }): void {
+    try {
+      opts.onProblem(e);
+    } catch {
+      // the consumer owns its errors
+    }
+  }
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => {
@@ -72,12 +108,18 @@ export function createFolderWatcher(opts: WatcherOptions): FolderWatcher {
     }
   }
 
+  function scheduleRescan(): void {
+    if (!running || debounceTimer) return;
+    debounceTimer = nodeSetTimeout(() => {
+      debounceTimer = null;
+      rescan().catch(() => {});
+    }, EVENT_DEBOUNCE_MS);
+  }
+
   function openFsWatcher(): void {
     if (fsWatcher || !running) return;
     try {
-      const w = fs.watch(opts.root, { recursive: opts.recursive }, () => {
-        void rescan();
-      });
+      const w = fs.watch(opts.root, { recursive: opts.recursive }, scheduleRescan);
       w.on('error', () => {
         if (fsWatcher === w) closeFsWatcher();
       });
@@ -104,96 +146,146 @@ export function createFolderWatcher(opts: WatcherOptions): FolderWatcher {
     }
   }
 
-  /** True once the size is non-zero and stable; false if it gave up (problem reported where relevant). */
+  function markerOf(st: fs.Stats): string {
+    return `${st.size}:${st.mtimeMs}`;
+  }
+
+  function giveUp(file: string, marker: string): void {
+    gaveUp.set(file, marker);
+    fireProblem({ path: file, reason: 'unreadable' });
+  }
+
+  /** True once the file is non-zero, stable and openable; false if not (problem reported where relevant). */
   async function waitStable(file: string): Promise<boolean> {
     const retries = Math.max(1, opts.stabilityRetries);
     const maxChecks = Math.max(retries * 20, 100);
     let prev = -1;
     let stable = 0;
+    let last: fs.Stats | null = null;
     for (let i = 0; i < maxChecks; i++) {
       await sleep(opts.stabilityDelayMs);
       if (!running) return false;
-      let size: number;
       try {
-        size = fs.statSync(file).size;
+        last = fs.statSync(file);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false; // vanished
-        gaveUp.set(file, -1);
-        opts.onProblem({ path: file, reason: 'unreadable' });
+        giveUp(file, 'stat-error');
         return false;
       }
-      if (size === prev) stable++;
+      if (last.size === prev) stable++;
       else {
         stable = 0;
-        prev = size;
+        prev = last.size;
       }
       if (stable >= retries) {
-        if (size === 0) {
-          gaveUp.set(file, 0);
-          opts.onProblem({ path: file, reason: 'unreadable' });
+        if (last.size === 0) {
+          giveUp(file, markerOf(last));
+          return false;
+        }
+        try {
+          probe(file);
+        } catch (err) {
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code === 'ENOENT') return false;
+          if (code !== undefined && LOCK_CODES.has(code)) {
+            // locked: report once, then retry on later passes without re-reporting
+            if (!lockReported.has(file)) {
+              lockReported.add(file);
+              fireProblem({ path: file, reason: 'unreadable' });
+            }
+            return false;
+          }
+          giveUp(file, markerOf(last));
           return false;
         }
         return true;
       }
     }
-    gaveUp.set(file, prev);
-    opts.onProblem({ path: file, reason: 'unreadable' });
+    giveUp(file, last ? markerOf(last) : 'unknown');
     return false;
   }
 
-  async function process(file: string): Promise<void> {
-    inFlight.add(file);
+  async function processFile(file: string): Promise<void> {
     try {
-      if (await waitStable(file)) {
-        if (running && !emitted.has(file)) {
-          emitted.add(file);
-          gaveUp.delete(file);
-          opts.onFile({ path: file, seenAt: Date.now() });
-        }
+      if ((await waitStable(file)) && running && !emitted.has(file)) {
+        emitted.add(file);
+        gaveUp.delete(file);
+        lockReported.delete(file);
+        fireFile(file);
       }
+    } catch {
+      // never let one file break the loop
     } finally {
       inFlight.delete(file);
     }
   }
 
-  async function rescan(): Promise<void> {
-    if (!running) return;
+  /** One walk; starts stability checks but does not wait for them. */
+  function pass(): void {
     const ok = rootAccessible();
     if (!ok) {
       if (rootOk) {
         rootOk = false;
         closeFsWatcher();
-        opts.onProblem({ reason: 'root-missing' });
+        fireProblem({ reason: 'root-missing' });
       }
       return;
     }
     if (!rootOk) {
       rootOk = true;
-      opts.onProblem({ reason: 'root-restored' });
+      tooOld.clear();
+      fireProblem({ reason: 'root-restored' });
     }
     openFsWatcher();
 
     const found: string[] = [];
     walk(opts.root, found);
-    const work: Array<Promise<void>> = [];
     for (const file of found) {
-      if (emitted.has(file) || inFlight.has(file)) continue;
+      if (emitted.has(file) || inFlight.has(file) || tooOld.has(file)) continue;
       let st: fs.Stats;
       try {
         st = fs.statSync(file);
       } catch {
         continue;
       }
-      if (Math.max(st.birthtimeMs, st.mtimeMs) < opts.since) continue;
+      if (Math.max(st.birthtimeMs, st.mtimeMs) < opts.since) {
+        if (tooOld.size >= TOO_OLD_MAX) tooOld.clear();
+        tooOld.add(file);
+        continue;
+      }
       if (opts.ignore(file)) continue;
       const gave = gaveUp.get(file);
       if (gave !== undefined) {
-        if (gave === st.size) continue;
+        if (gave === markerOf(st)) continue;
         gaveUp.delete(file);
       }
-      work.push(process(file));
+      inFlight.set(file, processFile(file));
     }
-    await Promise.all(work);
+  }
+
+  /** Single-flight: calls during a pass cause exactly one follow-up pass. */
+  function scan(): Promise<void> {
+    if (scanning) {
+      dirty = true;
+      return scanning;
+    }
+    const run = (async () => {
+      do {
+        dirty = false;
+        pass();
+        await Promise.resolve(); // let events that arrived mid-pass set `dirty`
+      } while (dirty && running);
+    })().finally(() => {
+      scanning = null;
+    });
+    scanning = run;
+    return run;
+  }
+
+  async function rescan(): Promise<void> {
+    if (!running) return;
+    await scan();
+    await Promise.all([...inFlight.values()]);
   }
 
   return {
@@ -201,12 +293,12 @@ export function createFolderWatcher(opts: WatcherOptions): FolderWatcher {
       if (running) return;
       running = true;
       rootOk = rootAccessible();
-      if (!rootOk) opts.onProblem({ reason: 'root-missing' });
+      if (!rootOk) fireProblem({ reason: 'root-missing' });
       else openFsWatcher();
       pollTimer = nodeSetInterval(() => {
-        void rescan();
+        rescan().catch(() => {});
       }, opts.pollIntervalMs ?? DEFAULT_POLL_MS);
-      void rescan();
+      rescan().catch(() => {});
     },
     stop(): void {
       running = false;
@@ -214,6 +306,10 @@ export function createFolderWatcher(opts: WatcherOptions): FolderWatcher {
       if (pollTimer) {
         nodeClearInterval(pollTimer);
         pollTimer = null;
+      }
+      if (debounceTimer) {
+        nodeClearTimeout(debounceTimer);
+        debounceTimer = null;
       }
       for (const s of sleepers) {
         nodeClearTimeout(s.timer);
