@@ -4,6 +4,7 @@ import { PDFDocument } from 'pdf-lib';
 import { loadSettings } from './core/settings';
 import { PageRenderer } from './pdf/pageRenderer';
 import { SessionController } from './scan/sessionController';
+import { ReviewView } from './ui/ReviewView';
 import { ScanPaneView } from './ui/ScanPaneView';
 import { StartDialog } from './ui/StartDialog';
 import { paneModel, statusText } from './ui/paneModel';
@@ -47,6 +48,23 @@ export default class ScanStitchPlugin extends Plugin {
           renderer: this.renderer,
           startSession: () => this.startSession(),
           endSession: () => this.endSession(),
+        }),
+    );
+
+    this.registerView(
+      REVIEW_VIEW_TYPE,
+      (leaf) =>
+        new ReviewView(leaf, {
+          controller: this.controller,
+          renderer: this.renderer,
+          settings: () => this.settings,
+          saveSettings: () => this.saveSettings(),
+          openScanPane: () => this.openScanPane(),
+          readSource: async (p) => {
+            const b = await fs.promises.readFile(p);
+            return new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+          },
+          pluginDir: this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
         }),
     );
 
