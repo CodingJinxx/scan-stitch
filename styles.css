@@ -107,3 +107,136 @@
   gap: var(--size-4-2);
   margin-top: var(--size-4-4);
 }
+
+/* Scan pane */
+.scan-stitch-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--size-4-4);
+  padding: var(--size-4-3);
+}
+
+.scan-stitch-status {
+  display: flex;
+  align-items: center;
+  gap: var(--size-4-2);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-error);
+}
+
+.scan-stitch-status-idle {
+  color: var(--text-muted);
+}
+
+.scan-stitch-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--text-error);
+  animation: scan-stitch-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes scan-stitch-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-stitch-dot {
+    animation: none;
+  }
+}
+
+.scan-stitch-counter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--size-4-3) 0;
+  border-radius: var(--radius-m);
+  background-color: var(--background-secondary);
+}
+
+.scan-stitch-count {
+  font-size: 4rem;
+  font-weight: var(--font-bold);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-normal);
+}
+
+.scan-stitch-count-label {
+  margin-top: var(--size-2-2);
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.scan-stitch-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 200px;
+  max-width: 100%;
+  align-self: center;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background-color: var(--background-primary-alt);
+}
+
+.scan-stitch-thumb.is-empty {
+  border-style: dashed;
+}
+
+.scan-stitch-thumb-img {
+  flex: none;
+  box-shadow: var(--shadow-s);
+  background-color: var(--background-primary);
+}
+
+.scan-stitch-thumb-placeholder {
+  padding: var(--size-4-2);
+  text-align: center;
+  font-size: var(--font-ui-small);
+  color: var(--text-faint);
+}
+
+.scan-stitch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2);
+}
+
+.scan-stitch-actions button {
+  flex: 1 1 110px;
+}
+
+.scan-stitch-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-4-3);
+  padding: var(--size-4-8) var(--size-4-2);
+  text-align: center;
+}
+
+.scan-stitch-empty-title {
+  font-weight: var(--font-semibold);
+  color: var(--text-normal);
+}
+
+.scan-stitch-empty-hint {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
