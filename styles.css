@@ -1,7 +1,10 @@
 /* Scan Stitch styles. */
 
-.scan-stitch-hidden {
-  display: none !important;
+/* Repeated class: specificity 0,3,0 outranks every rule here that sets display
+   on a hideable element (e.g. `.scan-stitch-start .scan-stitch-section` at 0,2,0),
+   with no priority flag. */
+.scan-stitch-hidden.scan-stitch-hidden.scan-stitch-hidden {
+  display: none;
 }
 
 /* Start dialog */
@@ -432,7 +435,6 @@
   overflow-y: hidden;
   border-top: 1px solid var(--background-modifier-border);
   background-color: var(--background-primary);
-  scrollbar-width: thin;
 }
 
 .scan-stitch-film-item {
