@@ -636,6 +636,8 @@ export class ReviewView extends ItemView {
       this.loadMain(page);
       return;
     }
+    // The same page can move (undo, reorder): keep its label in step with the counter.
+    if (this.mainImg) this.mainImg.alt = `Page ${this.cursor.index + 1}`;
     if (page.rotation !== this.shownRotation) {
       this.rotationDeg += rotationDelta(this.shownRotation, page.rotation);
       this.shownRotation = page.rotation;
