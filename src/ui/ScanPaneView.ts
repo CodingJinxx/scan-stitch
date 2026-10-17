@@ -18,7 +18,8 @@ export class ScanPaneView extends ItemView {
   private unsubscribe: (() => void) | null = null;
   private renderToken = 0;
   private mode: 'empty' | 'session' | null = null;
-  private thumbId: string | null = null;
+  /** Page id the thumbnail shows; null = the empty placeholder, undefined = nothing drawn yet. */
+  private thumbId: string | null | undefined = undefined;
   private thumbRetriedId: string | null = null;
   private thumbImg: HTMLImageElement | null = null;
   private thumbSize: { w: number; h: number } | null = null;
@@ -94,7 +95,7 @@ export class ScanPaneView extends ItemView {
     const root = this.rootEl;
     root.empty();
     this.renderToken++;
-    this.thumbId = null;
+    this.thumbId = undefined;
     if (mode === 'empty') {
       const empty = root.createDiv({ cls: 'scan-stitch-empty' });
       empty.createDiv({ cls: 'scan-stitch-empty-title', text: 'No scan session running' });
@@ -147,7 +148,7 @@ export class ScanPaneView extends ItemView {
           // The shared cache released this image URL: render once more.
           if (token !== this.renderToken || this.thumbRetriedId === id) return;
           this.thumbRetriedId = id;
-          this.thumbId = null;
+          this.thumbId = undefined;
           this.updateThumb(this.currentLast());
         });
         el.src = img.url;
