@@ -57,7 +57,7 @@ Notation: **[OQ]** marks an item that verifies an open question from code review
 ### B. Start dialog
 
 4. **Defaults.** Run "Start scan session". Expected: title "Start scanning"; Destination folder prefilled (vault root or the template folder); Template dropdown shows "Scan"; File name preview shows `Scan <today's date> <time>.pdf`; no "Recent" row yet; **Start is focused** (focus ring). **[OQ: Enter vs suggester popup]** The suggester popup must NOT be open on load.
-5. **Inline validation.** Clear the destination and type a nonexistent folder or press Enter on an invalid state. Expected: no error shown while typing before the first submit; after pressing Start/Enter on an invalid state an inline red message appears and the dialog stays open. Fix the value; the message disappears.
+5. **Inline validation.** Clear the destination (leave it empty) and press Start or Enter. Expected: no error shown while typing before the first submit; after pressing Start/Enter on an invalid state an inline red message appears and the dialog stays open. Fix the value; the message disappears. (A folder that does not exist yet is valid: it is created on save, per the spec.)
 6. **Folder suggester vs Enter. [OQ]** Type `Sca` in the folder field: a suggestion popup lists `Scans` and `Scans/Receipts`. Press Enter while the popup is open. Expected: Enter picks the highlighted suggestion and does NOT start the session; a second Enter starts it (when valid). Also check Esc with the popup open: closes the popup only, not the dialog (note actual behaviour either way).
 7. **Template preview.** Add a second template in settings first (Name `Receipt`, pattern `{folder} {date} {pages}`, destination folder `Scans/Receipts`). Reopen the dialog and pick `Receipt`. Expected: the destination changes to `Scans/Receipts`; preview reads `Receipts <date> ?.pdf` (a `{pages}` placeholder always previews as `?`, since the count is unknown until the session ends; the default template previews like `Scan 2026-10-17 14-05.pdf`); switching back to `Scan` keeps the destination unless that template has its own folder.
 8. **Append toggle.** Toggle "Append to existing PDF". Expected: folder/template section hides, "PDF to append to" shows and is focused; typing `.pdf` names suggests PDFs only (none until items 21 or 25 have saved some; revisit then); Start with an empty or non-PDF target shows the inline error and does not start. Toggle off; the folder section returns with its previous values.
@@ -95,7 +95,7 @@ Item 15's review is still open. Do the three "Between sessions" steps: Reset, th
 
 25. **Save and Save and open; rotations. [OQ: focus after save]** Reset, start a session with destination `Inbox` (Replace it if one is open), Drip standard 10, end it. In the review of 10 pages fix the three wrong-way pages (day 1 p2 and p5, day 2 p3, i.e. pages 2, 5 and 9 of the 10), reorder one page to the front, delete one page, then click "Save and open" with name `Demo B`. Expected: Notice "Saved Demo B.pdf (9 pages)"; the PDF opens in a new tab; page order matches the filmstrip (check the big numbers) and EVERY page reads upright, with "TOP OF PAGE" at the top; open it in an external viewer too (Acrobat, browser) and confirm the same. Plain "Save" does the same without opening. Note the focus after Save (should be sensible, not stuck).
 26. **Name collision.** Reset, start a session with destination `Inbox`, Drip standard 10 with `--limit 3`, end it, and save as `Demo B` into the same folder. Expected: the file is saved as `Demo B 2.pdf`, never overwriting `Demo B.pdf` (compare its hash with before), and repeating gives `Demo B 3.pdf`. A name with illegal characters (`a/b:c?`) is sanitised, not rejected, and leaving the field blank falls back to the template name.
-27. **Append adds after existing pages.** Reset, then start a session with "Append to existing PDF" and target `Inbox/Demo B.pdf` (use the PDF suggester; only PDFs listed), Drip standard 10 with `--limit 3`, and end it. Expected: the review header reads "Appending to Demo B.pdf (9 existing pages)" and has no filename field. Save: Notice "Added 3 pages to Demo B.pdf (12 pages)"; the first 9 pages are unchanged and the 3 new ones follow; a backup of the original is in `.obsidian/plugins/scan-stitch/backups/`.
+27. **Append adds after existing pages.** Reset, then start a session with "Append to existing PDF" and target `Inbox/Demo B.pdf` (use the PDF suggester; only PDFs listed), Drip standard 10 with `--limit 3`, and end it. Expected: the review header reads "Appending to Demo B.pdf (9 existing pages)" and has no filename field. Save: Notice "Added 3 pages to Demo B.pdf (12 pages)"; the first 9 pages are unchanged and the 3 new ones follow. A backup of the original is written to `.obsidian/plugins/scan-stitch/backups/` before the replace and removed once the new file is verified and written; it stays there only when the append fails.
 28. **Encrypted or corrupt target refused.** Make bad targets (PowerShell), then refresh the vault view:
     - corrupt: `$b = [IO.File]::ReadAllBytes('C:\Dev\scan-stitch-demo\vault\Inbox\Demo B.pdf'); [IO.File]::WriteAllBytes('C:\Dev\scan-stitch-demo\vault\Inbox\Corrupt.pdf', $b[0..300])`
     - encrypted: encrypt a copy with `qpdf --encrypt user owner 256 -- "Demo B.pdf" Encrypted.pdf` (or print a demo page to PDF with a password in any PDF tool) and put it in `Inbox`.
@@ -125,42 +125,42 @@ Item 15's review is still open. Do the three "Between sessions" steps: Reset, th
 
 ## Results
 
-Tester: ____________  Date: ____________  Obsidian version: ____________  Plugin commit: ____________
+Tester: Claude (automated, Playwright over CDP)  Date: 2026-10-17  Obsidian version: 1.8.10 (isolated user-data dir)  Plugin commit: 1bc28fb (feat/scan-stitch, with the fixes listed)
 
 | # | Item | Pass / Fail | Notes |
 | --- | --- | --- | --- |
-| 1 | Plugin loads | | |
-| 2 | Settings show preset, "Folder found" | | |
-| 3 | Bad folder shows "Folder not found" | | |
-| 4 | Start dialog defaults, Start focused | | |
-| 5 | Inline validation | | |
-| 6 | Folder suggester vs Enter [OQ] | | |
-| 7 | Template preview and template folder | | |
-| 8 | Append toggle | | |
-| 9 | Vault root recent, recents order | | |
-| 10 | One-Enter start on a recent | | |
-| 11 | Counter and thumbnail update | | |
-| 12 | New day folder picked up | | |
-| 13 | Thumbnail not broken while scanning [OQ] | | |
-| 14 | Discard last, rescan at end, scanner tree unchanged | | |
-| 15 | End session opens review on page 1 | | |
-| 16 | R / Shift+R | | |
-| 17 | Arrows, Home, End; thumbnails intact [OQ] | | |
-| 18 | Delete / Backspace | | |
-| 19 | Undo / redo | | |
-| 20 | Ctrl+A | | |
-| 21 | Enter saves; focus after save [OQ] | | |
-| 22 | Esc with and without edits; keymap [OQ] | | |
-| 23 | Click, Shift+click, range rotate | | |
-| 24 | Drag reorder incl. gaps | | |
-| 25 | Save / Save and open, rotations in the PDF | | |
-| 26 | Name collision " 2" | | |
-| 27 | Append adds after existing pages | | |
-| 28 | Encrypted / corrupt target refused, original unchanged | | |
-| 29 | Quit mid-session and resume (scanning and review) | | |
-| 30 | Second start dialog | | |
-| 31 | Scanner root renamed, notice, recovery | | |
-| 32 | Light and dark theme | | |
-| 33 | Narrow sidebar | | |
-| 34 | 60+ page stack performance | | |
-| - | Console errors seen anywhere | | |
+| 1 | Plugin loads | PASS | No safe-mode banner; enabled under Community plugins; ribbon "Start scan session"; palette shows Start/Resume always, End only while scanning, Discard only with pages; no console errors on load. |
+| 2 | Settings show preset, "Folder found" | PASS | Watch folder, "Folder found" (green), subfolders on, PDF only, "Scan (default)" with `Scan {date} {time}`, "0 locations stored". Cosmetic: the watch-folder input is narrow and shows only `C:\Dev\scan-stitch-demo\`. |
+| 3 | Bad folder shows "Folder not found" | PASS | Red "Folder not found" after Tab; the restored path shows "Folder found" and persists after reopening. |
+| 4 | Start dialog defaults, Start focused | FAIL, fixed (611464a); part OPEN | The folder suggester popup was open on load (Obsidian's input suggester opens on any focus event); fixed and re-verified. OPEN: with no recent and no template folder the default destination is empty by design (`defaultDestination`), so the field (not Start) gets focus and nothing is prefilled, while the checklist expects a vault-root default. With a recent, Start is focused and no popup opens (item 10). |
+| 5 | Inline validation | PASS | Empty destination: no error while typing, "Choose a destination folder." after Start/Enter, cleared on typing. Checklist corrected: a nonexistent folder is valid (created on save). |
+| 6 | Folder suggester vs Enter [OQ] | PASS | `Sca` lists Scans, Scans/Receipts; Enter with the popup open picks `Scans` and does not start; a second Enter starts. Esc with the popup open closes only the popup. |
+| 7 | Template preview and template folder | PASS | Receipt template (folder Scans/Receipts): destination switches, preview `Receipts 2026-10-17 ?.pdf`; switching back to Scan keeps the destination. |
+| 8 | Append toggle | PASS | Folder section hides, PDF field focused; empty, non-PDF and missing targets show inline errors and do not start; toggling off restores the folder value. Revisited after saves: the suggester lists only PDFs. |
+| 9 | Vault root recent, recents order | PASS | Saved into Inbox, /, Scans/Receipts: chips `Scans/Receipts` (selected), `/`, `Inbox`; clicking `/` sets the field to `/`, valid, Start focused. |
+| 10 | One-Enter start on a recent | PASS | Start focused, no popup; one Enter starts with the pane at 0. Esc closes the dialog without a session. |
+| 11 | Counter and thumbnail update | FAIL (latency OPEN); placeholder fixed (1893d93) | Counter 1, 2, 3, "Loading preview" then the image, status bar "Scanning: 3 pages", no `.part` counted. Each page counts 4.2 s after its drop (expected 1 to 3 s): `waitStable` needs `stabilityRetries`+1 equal readings, each after the 1000 ms delay; changing that changes a documented setting, so OPEN. "Waiting for the first page" never showed (blank box): fixed and re-verified. |
+| 12 | New day folder picked up | PASS | `2026_10_16` created mid-session was picked up without a restart; the count reached 10 in arrival order. |
+| 13 | Thumbnail not broken while scanning [OQ] | PASS | Two more drops, tab switch and back: the thumbnail always loaded, no `blob:` errors in the console. |
+| 14 | Discard last, rescan at end, scanner tree unchanged | PASS | Count 14 to 13, previous page shown; the discarded file stays on disk and does not return; the new file lands at the end. SHA-256 and mtime of every pre-existing scanner file unchanged; only the two deliberately added files differ. |
+| 15 | End session opens review on page 1 | PASS | Review tab, `Page 1 / 14`, 14 thumbnails, template name in the field, buttons enabled, focus on the view (ArrowRight works without a click); a drop during review adds nothing. |
+| 16 | R / Shift+R | PASS | Shift+R on p2 gives 270 with the marker "rotated 270°"; R x4 returns to it; p5 R x2 = 180; the pages read upright. |
+| 17 | Arrows, Home, End; thumbnails intact [OQ] | PASS | Right x3, Home, End, Left at page 1 (no wrap). After rotating every page and scrolling the whole strip: 0 broken, 0 "!". Minor, fixed (1bc28fb): the main image's alt text kept the old page number after an undo moved the page. |
+| 18 | Delete / Backspace | PASS | Delete on p3 gives `Page 3 / 9`; Backspace on the last page moves to the new last page. |
+| 19 | Undo / redo | PASS | Ctrl+Z restores deletions in place, then the earlier rotation; Ctrl+Y and Ctrl+Shift+Z redo in order; Welcome.md unchanged. |
+| 20 | Ctrl+A | PASS | `Page 8 / 9 (9 selected)`; R rotates all; one Ctrl+Z undoes it. |
+| 21 | Enter saves; focus after save [OQ] | PASS | Typed `Demo A`, Enter: "Saved Demo A.pdf (10 pages)", the tab closes. Focus lands in the Welcome editor (the leaf Obsidian activates). Enter with focus on the page saves exactly once. |
+| 22 | Esc with and without edits; keymap [OQ] | FAIL, fixed (7fad33e, c32d739) | Obsidian's global keymap handled Esc first and activated the Welcome tab while our dialog opened over it; Cancel left focus on `<body>`. Fixed: Esc now stays in the review, Esc/Cancel return focus to it, Esc in the name field returns to the view. Second bug: a page deleted in review came back at the end after Keep scanning (the watcher re-added it); fixed. (a), Keep scanning (Enter), and Discard ("Scan session discarded", scanner unchanged) re-verified. |
+| 23 | Click, Shift+click, range rotate | PASS | Pages 2 to 5 selected `(4 selected)`; R rotates four; one Ctrl+Z; a plain click collapses the selection. |
+| 24 | Drag reorder incl. gaps | PASS | Onto the left half of p2 (before), the right half of the last (end), the 12 px gap, the empty area after the last; Ctrl+Z reverts; an Esc-cancelled drag and a drop on the page stage change nothing; the strip auto-scrolls while dragging at its edge. "Dragging while saving" not timed (an 80-page save takes 170 ms); guarded in code. |
+| 25 | Save / Save and open, rotations in the PDF | PASS | "Saved Demo B.pdf (9 pages)", opened in a new tab, focus in the PDF viewer. The saved file was checked by reading each page's `/Rotate` and its "IMG_000n" label: the order equals the filmstrip and every page is upright. No external viewer used (checked programmatically instead). |
+| 26 | Name collision " 2" | PASS | `Demo B 2.pdf`, `Demo B 3.pdf`, Demo B hash unchanged; a move to the front is kept in the file; `a/b:c?` saved as `abc.pdf`; blank uses the template name. Focus after plain Save with a PDF tab active: `<body>` (Obsidian activates the PDF leaf without focusing it). |
+| 27 | Append adds after existing pages | PASS | "Appending to Demo B.pdf (9 existing pages)", no name field; "Added 3 pages to Demo B.pdf (12 pages)"; the first 9 pages are identical. The backup is removed after a verified write by design (checklist corrected). |
+| 28 | Encrypted / corrupt target refused, original unchanged | PASS (encrypted simulated) | Corrupt (first 301 bytes): "... the PDF is corrupt or unreadable. The original file was not changed." Encrypted: no qpdf here, so a copy with an `/Encrypt` trailer entry (pdf-lib refuses it as encrypted; not a real cipher): "... the PDF is encrypted ...". The review stays open, hashes unchanged, no stray files. |
+| 29 | Quit mid-session and resume (scanning and review) | PASS | Process tree killed and relaunched each time: the prompt shows Pages 3, Inbox, start time; Resume keeps watching (3 to 4); the review resumes with its rotation; Later, then the palette command works; Drop asks "Drop this scan session? ..." and leaves the scanner files. Note: undo history is not persisted, so after a resume Esc leaves the review without the dialog (the edits are kept). |
+| 30 | Second start dialog | PASS | Resume current session / Replace it / Cancel; Replace asks "This drops the pages scanned so far" (Back / Replace it) before dropping. |
+| 31 | Scanner root renamed, notice, recovery | PASS | "Scanner folder is unavailable" once, pages kept; "Scanner folder is back", the next drop is picked up; the same across a restart with Resume. |
+| 32 | Light and dark theme | PASS | Switched in the demo vault's Appearance setting: text, current outline, range selection, rotated marker and the red "Folder not found" are legible in both; no hard-coded blocks. |
+| 33 | Narrow sidebar | FAIL, fixed (bebc09a) | Pane at the 200 px sidebar minimum: the counter and stacked buttons fit. Review at 336 px: buttons, counter and field fit, the strip scrolls, the hint row hides below 520 px instead of overflowing. Start dialog at 320 px fine. The resume, existing-session and confirm dialogs overflowed at 320 px ("Replace it"/"Cancel" cut off); fixed and re-verified. |
+| 34 | 60+ page stack performance | PASS | 80 pages, two runs: the counter reached exactly 80 in numeric order 5.7 s after the burst; worst main-thread stall 27 to 34 ms; review in 280 ms; End/Home 8 to 11 ms; select all + R 11 to 13 ms; 80/80 thumbnails, 0 broken (also after Keep scanning and back); save 165 to 182 ms with "Saving…", Notice 80 pages; JS heap 33 to 37 MB. |
+| - | Console errors seen anywhere | PASS | No console errors. Warnings only from pdf-lib parsing the deliberately corrupt file in item 28. |
