@@ -641,6 +641,12 @@
   cursor: pointer;
 }
 
+/* Obsidian 1.13+ settings: a row that hosts free-form content (the placeholder
+   help, the template editor) instead of a name and a control. */
+.setting-item.scan-stitch-block {
+  display: block;
+}
+
 .scan-stitch-template-form {
   margin-top: var(--size-4-2);
   padding: var(--size-4-3);
