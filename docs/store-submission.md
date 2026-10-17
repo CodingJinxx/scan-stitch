@@ -13,7 +13,7 @@ Checked 2026-10-17 against the official sources listed at the bottom. Status per
 
 | Status | Rule | Evidence |
 |---|---|---|
-| FAIL | `README.md` describes purpose and how to use the plugin (excerpt is shown on the listing) | `README.md` is 2 lines (title and one sentence), no usage. Must be written before submitting (plan tasks 16 to 18). |
+| PASS | `README.md` describes purpose and how to use the plugin (excerpt is shown on the listing) | `README.md:8` one-line pitch, `:16` Why, `:20` Features, `:32` How it works, `:57` Install, `:71` Usage (commands, keyboard shortcuts, templates, append mode), `:147` Settings, `:179` FAQ |
 | PASS | `LICENSE` present and license clearly indicated | `LICENSE` (MIT, Jay Leimer); `package.json` `"license": "MIT"` |
 | PASS | `manifest.json` present | `manifest.json` |
 | PASS | `versions.json` present (older-app fallback) | `versions.json` = `{"1.0.0": "1.5.0"}` |
@@ -56,9 +56,9 @@ Checked 2026-10-17 against the official sources listed at the bottom. Status per
 |---|---|---|
 | PASS | No obfuscated code | esbuild production bundle is minified only (`esbuild.config.mjs:24`), not obfuscated; source is public |
 | PASS | No ads, no client-side telemetry | `grep -rniE "telemetry|analytics" src` finds nothing |
-| PASS | No network use | `grep -rnE "fetch\(|requestUrl|XMLHttpRequest|WebSocket|https?://" src` finds none. The README should still state this. |
+| PASS | No network use | `grep -rnE "fetch\(|requestUrl|XMLHttpRequest|WebSocket|https?://" src` finds none. Stated in `README.md:176` ("No network access, no telemetry, no account"). |
 | PASS | Does not install or update itself or its dependencies | no such code |
-| FAIL (disclosure) | Access to files outside the vault must be clearly explained in the README | the plugin watches a scanner folder outside the vault (`src/scan/folderWatcher.ts`); README says nothing yet. Add a disclosure section. |
+| PASS (disclosure) | Access to files outside the vault must be clearly explained in the README | the plugin watches a scanner folder outside the vault (`src/scan/folderWatcher.ts`); `README.md:168` "Privacy and file access": reads PDF/JPEG/PNG from the configured scanner folder outside the vault and why (`:173`), never modifies, moves or deletes anything there (`:174`), writes only into the vault, desktop only, session state in `data.json` |
 | N-A | Payment, account, static ads, server telemetry, closed source | none apply |
 | PASS (partly UNVERIFIED) | Licence compliance and attribution of bundled code | pdf-lib is MIT. Transitive licences not audited: UNVERIFIED. |
 | PASS | Not a fork | original code |
@@ -78,7 +78,7 @@ Checked 2026-10-17 against the official sources listed at the bottom. Status per
 | PASS | Settings headings via `setHeading()`, sentence case, no "settings" in heading, no plugin-name heading | `src/ui/SettingsTab.ts:91,162,196,251,399` |
 | PASS | No `workspace.activeLeaf`; no `Vault.modify` on the active note | none found; `vault.modifyBinary` at `src/ui/ReviewView.ts:906` writes a generated PDF, not a note |
 | PASS | `const`/`let` instead of `var` | `grep -rnE "\bvar " src` finds none |
-| PASS (note) | Prefer `async`/`await` over `.then()` | three short `.then()` uses (`src/main.ts:190`, `src/scan/sessionController.ts:244`, `src/pdf/pageRenderer.ts:119`), a "prefer", not a rule |
+| PASS (note) | Prefer `async`/`await` over `.then()` | seven short `.then()` uses, mostly promise chaining and fire-and-forget renders (`src/main.ts:190`, `src/scan/sessionController.ts:244` and `:361`, `src/pdf/pageRenderer.ts:119`, `src/ui/ReviewView.ts:472` and `:663`, `src/ui/ScanPaneView.ts:138`), a "prefer", not a rule |
 | PASS (note) | Avoid inline styles | the only inline styles set computed per-image size and rotation (`src/ui/ScanPaneView.ts:178-180`), which static CSS cannot express; everything else is in `styles.css` |
 | PASS | Mobile guidance (Node APIs, lookbehind) | desktop only; no regex lookbehind (`grep -rnE "\(\?<[=!]" src` is empty) |
 | N-A / UNVERIFIED | Editor extensions, `registerView` factory references, frontmatter, `normalizePath` | no editor extension; vault paths via the Vault API; not exhaustively audited for `normalizePath` |
@@ -126,7 +126,7 @@ Legacy PR title and body, UNVERIFIED because the PR template no longer exists: t
 
 ## 9. Human-only steps remaining
 
-1. Write the README: purpose, usage, settings, and disclosures (watches a folder outside the vault; no network, no telemetry, no account; desktop only).
+1. ~~Write the README~~ done (purpose, usage, settings, disclosures; see section 1 and 4).
 2. Push and merge; confirm the repo's Actions setting allows workflow write permissions.
 3. Tag and push `1.0.0` (preferred) or `v1.0.0`; check the Release run and that the release has tag `1.0.0` and exactly `main.js`, `manifest.json`, `styles.css`.
 4. Check `id` and `name` are unique in the directory.
