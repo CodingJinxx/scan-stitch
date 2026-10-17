@@ -22,12 +22,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-
+      # Fail fast on a mislabelled tag, before installing anything.
       - name: Check tag matches manifest.json and package.json
         env:
           TAG: ${{ github.ref_name }}
@@ -41,6 +36,12 @@ jobs:
             exit 1
           fi
 
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,5 +50,7 @@ jobs:
           # Obsidian looks for the release tagged exactly like manifest.json "version"
           # (for example 1.0.0, not v1.0.0). For a v-prefixed tag push, the release is
           # created under the bare version tag on the same commit.
+          # Tags created with GITHUB_TOKEN do not trigger new workflow runs, so creating the
+          # bare tag here from a v-tag run cannot start this workflow again (no loop).
           VERSION="${TAG#v}"
-          gh release create "$VERSION" main.js manifest.json styles.css             --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
+          gh release create "$VERSION" main.js manifest.json styles.css --target "$GITHUB_SHA" --title "$VERSION" --generate-notes
