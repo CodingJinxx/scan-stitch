@@ -9,7 +9,7 @@
 
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-5A3FD0.svg)](LICENSE)
 
-<img alt="A scan session in Obsidian: pages arrive in the side pane and the counter rises, the last page is discarded, then the review screen rotates the wrong-way pages and saves one PDF." src="assets/demo.gif" width="800">
+<img alt="A scan session in Obsidian: the start dialog, pages arriving in the side pane as the counter rises, Discard last, End session, the crooked pages rotated in the review screen, then Save and open shows the merged PDF." src="assets/demo.gif" width="800">
 
 </div>
 
@@ -56,7 +56,7 @@ Many flatbed and sheet-fed scanners save **one file per page** into a folder: `I
 
 ## Install
 
-Scan Stitch is **desktop only** (Windows, macOS, Linux) and needs Obsidian 1.5.0 or newer.
+Scan Stitch is **desktop only** and needs Obsidian 1.5.0 or newer. It is tested on Windows; see [Limitations](#limitations).
 
 **From Community plugins:** the listing is pending review. Once it is listed, open Settings → Community plugins → Browse, search for "Scan Stitch", install and enable it.
 
@@ -67,6 +67,15 @@ Scan Stitch is **desktop only** (Windows, macOS, Linux) and needs Obsidian 1.5.0
 3. Put them in `<your vault>/.obsidian/plugins/scan-stitch/` (create the folder if needed).
 4. Restart Obsidian or reload plugins, then enable **Scan Stitch** under Settings → Community plugins.
 5. In Settings → Scan Stitch, set **Watch folder** to the folder your scanner saves into.
+
+### Limitations
+
+- **Windows is the only fully tested platform.** macOS and Linux are untested; they are expected to work through the polling fallback (besides listening for file system events, the folder is rescanned every 3 seconds).
+- **Desktop only.** Obsidian mobile cannot read folders outside the vault.
+- **No automatic rotation.** You rotate the wrong-way pages yourself; it takes one key per page, or one for a whole range.
+- **No OCR.** The PDF contains the scanned pages as they are, so their text is not searchable unless the scanner already made it so.
+- **No TIFF.** Only PDF, JPEG and PNG files are read.
+- **Files rewritten in place are ignored.** A file that already existed when the session started and is then overwritten under the same name is not picked up. (After an Obsidian restart and resume it may be, because the list of old files is kept in memory only.)
 
 ## Usage
 
@@ -170,7 +179,7 @@ At least one file type must stay enabled. Folder, file type and stability change
 Obsidian's developer policies ask plugins to explain any access outside the vault, so here it is plainly:
 
 - **Desktop only.** The plugin uses Node's file system API, which Obsidian provides only on desktop.
-- **Reads files outside your vault.** It reads PDF, JPEG and PNG files from the scanner folder you configure, which is normally outside the vault. That is the whole point: your scanner writes there, and Scan Stitch picks the pages up from there.
+- **Reads files outside your vault.** It reads PDF, JPEG and PNG files from the scanner folder you configure, which is normally outside the vault. That is the whole point: your scanner writes there, and Scan Stitch picks the pages up from there. The **Browse** button in the settings opens your system's local folder picker; nothing is sent anywhere.
 - **Never changes the scanner folder.** It never modifies, moves, renames or deletes anything in it. "Discard last" and "Discard session" only change what the plugin remembers; the files stay.
 - **Writes only into the vault**: the merged PDF in the destination folder, and (in append mode) a temporary backup copy in the plugin's own folder.
 - **No network access, no telemetry, no account.** The plugin makes no network requests.
@@ -197,7 +206,7 @@ pdf-lib, the PDF library the plugin uses, cannot embed TIFF images, and Obsidian
 That is intended: only files created or modified after the session start count. Files that were already there are ignored.
 
 **I rescanned into an existing file name and it was not picked up.**
-A file that already existed when the session started and is then overwritten in place is not picked up during that session; the plugin has already noted it as an old file. Let the scanner write a new file instead.
+A file that already existed when the session started and is then overwritten in place is not picked up during that session; the plugin has already noted it as an old file. Let the scanner write a new file instead. (After a restart and resume such a file may be picked up, because that note is kept in memory only.)
 
 **How do I rotate a whole batch at once?**
 Click the first page of the batch in the filmstrip, `Shift`+click the last, then press `R` (or `Shift+R`). `Ctrl+A` then `R` rotates every page.
