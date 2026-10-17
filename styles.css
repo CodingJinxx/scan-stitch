@@ -1,1 +1,109 @@
 /* Scan Stitch styles. */
+
+.scan-stitch-hidden {
+  display: none !important;
+}
+
+/* Start dialog */
+.scan-stitch-start .scan-stitch-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-2);
+}
+
+.scan-stitch-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+
+.scan-stitch-label {
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+}
+
+.scan-stitch-input {
+  width: 100%;
+}
+
+.scan-stitch-recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2-2);
+}
+
+.scan-stitch-recent-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.scan-stitch-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2-2);
+}
+
+.scan-stitch-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: var(--size-2-1) var(--size-4-2);
+  height: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  box-shadow: none;
+}
+
+.scan-stitch-chip:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.scan-stitch-chip.is-selected {
+  border-color: var(--interactive-accent);
+  color: var(--text-accent);
+}
+
+.scan-stitch-preview {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-4-2);
+  padding: var(--size-4-2) var(--size-4-3);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.scan-stitch-preview-label {
+  flex: none;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+
+.scan-stitch-preview-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.scan-stitch-error {
+  margin-top: var(--size-4-2);
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+.scan-stitch-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--size-4-2);
+  margin-top: var(--size-4-4);
+}
