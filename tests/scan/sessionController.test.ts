@@ -321,6 +321,51 @@ describe('SessionController', () => {
       expect(c.state?.data.pages.map((x) => x.path)).toEqual([real, '/scans/new.pdf']);
     });
 
+    it('resolves before a slow file has stabilised; the page arrives later', async () => {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((r) => (release = r));
+      const create = deps.createWatcher!;
+      deps.createWatcher = (opts) => {
+        const w = create(opts);
+        const rescan = w.rescan.bind(w);
+        w.rescan = async () => {
+          await gate; // a stability check that takes its time
+          await rescan();
+        };
+        return w;
+      };
+      preload.push({ path: '/scans/slow.pdf', seenAt: 3 });
+      const c = new SessionController(deps);
+      const changes = vi.fn();
+      c.onChange(changes);
+      let resolved = false;
+      void c.resume(data({ watchRoot: tmp })).then(() => (resolved = true));
+      await flush();
+      expect(resolved).toBe(true);
+      expect(c.state?.data.phase).toBe('scanning');
+      expect(c.state?.data.pages).toEqual([]);
+      expect(changes).toHaveBeenCalled();
+      expect(persisted.at(-1)?.id).toBe('s1');
+      expect(watchers[0].started).toBe(1);
+      release();
+      await flush();
+      expect(c.state?.data.pages.map((p) => p.path)).toEqual(['/scans/slow.pdf']);
+    });
+
+    it('a background rescan that fails does not break the resumed session', async () => {
+      const create = deps.createWatcher!;
+      deps.createWatcher = (opts) => {
+        const w = create(opts);
+        w.rescan = () => Promise.reject(new Error('EIO'));
+        return w;
+      };
+      const c = new SessionController(deps);
+      await expect(c.resume(data({ watchRoot: tmp }))).resolves.toBeUndefined();
+      await flush();
+      expect(c.state?.data.phase).toBe('scanning');
+      expect(watchers[0].stopped).toBe(0);
+    });
+
     it('drops malformed pages defensively', async () => {
       const c = new SessionController(deps);
       const bad = data({ pages: [null, 5, { id: 1 }, { path: 7 }] as unknown as SessionData['pages'] });

@@ -92,19 +92,14 @@ export class SessionController {
       pages = this.dropMissing(pages);
     }
     this.session = new SessionState({ ...clean, pages });
-    const gen = this.generation;
-    if (clean.phase === 'review') {
-      this.changed();
-      return;
+    if (clean.phase === 'scanning') {
+      // Like start(): do not wait for the stability checks (they can take a while);
+      // files that arrived meanwhile are added as they settle.
+      const w = this.startWatcher();
+      w.rescan().catch(() => {
+        // the watcher keeps polling; nothing to do
+      });
     }
-    const w = this.startWatcher();
-    try {
-      await w.rescan();
-      await this.fileChain;
-    } catch {
-      // the watcher keeps polling; nothing to do
-    }
-    if (gen !== this.generation || !this.session) return;
     this.changed();
   }
 
