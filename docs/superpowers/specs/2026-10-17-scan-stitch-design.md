@@ -116,10 +116,11 @@ The repo should look polished, as part of the same one-pass delivery:
 
 ## 5b. Calls made after the builder check (mine, not discussed with the author)
 - **Append verify/replace**: build the merged bytes in memory, reopen them with pdf-lib and require page count = old + new. Before replacing, copy the original into the plugin's own folder; replace with a single `modifyBinary`; delete the copy once the write succeeds. On any failure the original stays and the copy is kept.
-- **Image pages**: apply EXIF orientation first, then the manual rotation. Page size = pixels at the image's DPI when present, else 150 DPI. PNG alpha is flattened onto white.
+- **Image pages**: apply EXIF orientation first, then the manual rotation. Page size = pixels at the image's DPI when present, else 150 DPI. PNG alpha is embedded natively by pdf-lib (as a soft mask), not flattened onto white.
 - **Multi-page input PDFs**: the file is the unit for counting and "Discard last"; all of its pages go into the review as separate reviewable pages, rotation stored per page.
 - **Baseline**: no full scan of the watch root. A file counts if its creation/modification time is at or after the session start and its path is not in the discarded list. On resume after a restart, files that arrived while Obsidian was closed and meet that rule are picked up.
 - **Resume**: page files that no longer exist are skipped with a notice. Starting a session while one is open asks to resume or replace it. Destination and template are saved when the session starts.
+- **Review edits**: the review UI edits the session state directly and calls `SessionController.commit()` after every edit (rotate, remove, move, undo, redo) to persist and announce it. Esc in review is handled by a view-local `Scope` (pushed while the review has focus), so it is not taken by Obsidian's global tab handling.
 - **Recent locations**: folders only, recorded on a successful save (abandoned sessions do not pollute the list).
 - **Platforms**: Windows is the primary tested platform; macOS and Linux are best effort through the polling fallback and careful path handling.
 
