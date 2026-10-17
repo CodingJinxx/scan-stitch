@@ -29,6 +29,8 @@ export default class ScanStitchPlugin extends Plugin {
   renderer!: PageRenderer;
   private statusEl: HTMLElement | null = null;
   private modal: Modal | null = null;
+  /** Set in onunload: late callbacks (layout ready, a resume in flight) must not open UI or start watching. */
+  private unloaded = false;
 
   async onload(): Promise<void> {
     this.settings = loadSettings(await this.loadData());
@@ -114,6 +116,7 @@ export default class ScanStitchPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.unloaded = true;
     this.modal?.close();
     this.modal = null;
     // Stops the watcher and flushes pending writes; the stored session stays for the next start.
@@ -131,6 +134,7 @@ export default class ScanStitchPlugin extends Plugin {
   }
 
   private openModal(modal: Modal): void {
+    if (this.unloaded) return;
     this.modal?.close();
     this.modal = modal;
     modal.open();
@@ -138,7 +142,7 @@ export default class ScanStitchPlugin extends Plugin {
 
   private offerResume(): void {
     const session = this.settings.session;
-    if (this.controller.state || !session || resumeChoice(session) === 'none') return;
+    if (this.unloaded || this.controller.state || !session || resumeChoice(session) === 'none') return;
     this.openModal(
       new ResumePromptModal(this.app, {
         session,
@@ -150,6 +154,7 @@ export default class ScanStitchPlugin extends Plugin {
 
   /** Opens the running session, or restores the stored one first. */
   async resumeSession(): Promise<void> {
+    if (this.unloaded) return;
     try {
       if (!this.controller.state) {
         const stored = this.settings.session;
@@ -160,7 +165,7 @@ export default class ScanStitchPlugin extends Plugin {
         await this.controller.resume(stored);
       }
       const state = this.controller.state;
-      if (!state) return;
+      if (!state || this.unloaded) return;
       if (resumeChoice(state.data) === 'review') await this.openReview();
       else await this.openScanPane();
     } catch (e) {
