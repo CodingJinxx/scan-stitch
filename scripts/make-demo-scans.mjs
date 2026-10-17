@@ -137,13 +137,30 @@ function parseGenerate(argv) {
   }
   if (!out.outDir) throw new Error('Missing <outDir>');
   if (out.days.length === 0) throw new Error('--days needs at least one name');
+  for (const d of out.days) {
+    if (!/^[A-Za-z0-9_-]+$/.test(d)) throw new Error(`Invalid day folder name "${d}" (letters, digits, _ and - only)`);
+  }
   if (out.count !== null && (!Number.isInteger(out.count) || out.count < 1)) throw new Error('--count needs a positive integer');
   return out;
+}
+
+/** Refuses a directory that holds anything but demo day folders of IMG_####.pdf files. */
+function assertDemoDir(root) {
+  if (!existsSync(root)) return;
+  for (const name of readdirSync(root)) {
+    const dir = join(root, name);
+    const ok =
+      /^[A-Za-z0-9_-]+$/.test(name) &&
+      statSync(dir).isDirectory() &&
+      readdirSync(dir).every((f) => /^IMG_\d{4,}\.pdf$/.test(f));
+    if (!ok) throw new Error(`Refusing to write into ${root}: it contains "${name}", which is not a demo day folder`);
+  }
 }
 
 async function generate(argv) {
   const { outDir, days, count } = parseGenerate(argv);
   const root = resolve(outDir);
+  assertDemoDir(root);
   const plan = count !== null ? [[days[0], count]] : days.map((d, i) => [d, [6, 4][i] ?? 4]);
   let seq = 0;
   let total = 0;
@@ -152,8 +169,14 @@ async function generate(argv) {
     mkdirSync(dir, { recursive: true });
     for (let page = 1; page <= n; page++) {
       const bytes = await makePage(day, page, seq++, rotationFor(di, page, count !== null));
-      writeFileSync(join(dir, `IMG_${String(page).padStart(4, '0')}.pdf`), bytes);
-      total++;
+      const file = join(dir, `IMG_${String(page).padStart(4, '0')}.pdf`);
+      try {
+        writeFileSync(file, bytes, { flag: 'wx' });
+        total++;
+      } catch (e) {
+        if (e?.code !== 'EEXIST') throw e;
+        console.log(`skip (exists) ${file}`);
+      }
     }
     console.log(`${dir}: ${n} pages`);
   }
@@ -181,7 +204,7 @@ async function drip(argv) {
   }
   const [src, dest, secs] = args;
   const seconds = Number(secs);
-  if (!src || !dest || !Number.isFinite(seconds) || seconds < 0 || !Number.isFinite(limit) && limit !== Infinity) {
+  if (!src || !dest || !Number.isFinite(seconds) || seconds < 0 || (!Number.isFinite(limit) && limit !== Infinity)) {
     throw new Error('Usage: --drip <srcDir> <destDir> <seconds> [--limit N]');
   }
   const srcRoot = resolve(src);
@@ -197,10 +220,10 @@ async function drip(argv) {
     }
     if (copied > 0) await sleep(seconds * 1000);
     mkdirSync(join(target, '..'), { recursive: true });
-    // A fresh write (not copyFile, which keeps the old modification time on Windows) so the file
-    // counts as new, under a name the *.pdf pattern ignores, then an atomic rename.
+    // A fresh write gives the file a new birth/modification time, which satisfies the watcher's
+    // "newer than session start" rule. It goes under a name the *.pdf pattern ignores, then is renamed.
     const tmp = `${target}.part`;
-    writeFileSync(tmp, readFileSync(join(srcRoot, rel)));
+    writeFileSync(tmp, readFileSync(join(srcRoot, rel)), { flag: 'wx' });
     renameSync(tmp, target);
     copied++;
     console.log(`${new Date().toLocaleTimeString()}  dropped ${rel}`);
