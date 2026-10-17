@@ -1,0 +1,152 @@
+# Scan Stitch manual QA checklist
+
+Run this in the demo vault, with synthetic pages only. Fill in the results table at the end.
+
+## Setup (once, and after every code change)
+
+```powershell
+npm run build
+node scripts/install-demo.mjs                      # copies main.js, manifest.json, styles.css into the demo vault
+node scripts/make-demo-scans.mjs C:\Dev\scan-stitch-demo\scanner                                          # old pages, ignored by a new session
+node scripts/make-demo-scans.mjs C:\Dev\scan-stitch-demo\scanner-staged --days 2026_10_15,2026_10_16     # pages to drip in
+```
+
+- Vault: `C:\Dev\scan-stitch-demo\vault` (open it with "Open folder as vault"; it contains `Welcome.md`, `Inbox/`, `Scans/Receipts/`).
+- Watched folder (preset): `C:\Dev\scan-stitch-demo\scanner`, holding `2026_10_13` (6 pages) and `2026_10_14` (4 pages). These already exist before a session starts, so a session ignores them (only files newer than the session start count).
+- Staged pages: `scanner-staged\2026_10_15` (6 pages) and `2026_10_16` (4). The drip command copies them, one at a time, into the watched folder:
+  `node scripts/make-demo-scans.mjs --drip C:\Dev\scan-stitch-demo\scanner-staged C:\Dev\scan-stitch-demo\scanner 4`
+  (4 = seconds between files; add `--limit 3` to drop only the first 3; existing files are skipped, so delete the dripped day folders from `scanner` to reset).
+- Wrong-way pages in every generated day list: page 2 of day 1 (`/Rotate 90`, shown turned clockwise), page 5 of day 1 (upside down, 180), page 3 of day 2 (`/Rotate 90`). Each page has "TOP OF PAGE" at the top edge and a big number in the top-right corner, so orientation and order are obvious. Staged: `2026_10_15` p2 = 90, p5 = 180; `2026_10_16` p3 = 90.
+- To fix a 90 page press `Shift+R` once (or `R` three times); a 180 page needs `R` twice.
+- Keep DevTools (Ctrl+Shift+I) open on the Console tab throughout and note any red errors in the results table.
+
+Hash listing of the scanner tree (used in item 14), PowerShell:
+
+```powershell
+Get-ChildItem C:\Dev\scan-stitch-demo\scanner -Recurse -Force -File | Get-FileHash -Algorithm SHA256 | Sort-Object Path | ForEach-Object { "$($_.Hash)  $($_.Path)" } | Set-Content C:\Dev\scan-stitch-demo\hash-before.txt
+# ... do the thing ...  then the same command into hash-after.txt, and:
+fc.exe C:\Dev\scan-stitch-demo\hash-before.txt C:\Dev\scan-stitch-demo\hash-after.txt   # "no differences encountered"
+```
+
+Also compare folder and file counts with `Get-ChildItem ... -Recurse -Force | Measure-Object`; no `.part` or other stray files may remain.
+
+## Checklist
+
+Notation: **[OQ]** marks an item that verifies an open question from code review.
+
+### A. Load and settings
+
+1. **Plugin loads.** Open the demo vault, trust/enable community plugins if asked. Expected: no safe-mode banner; "Scan Stitch" is listed under Community plugins and enabled; the ribbon has a scan icon; the command palette lists "Scan Stitch: Start scan session", "End scan session" (only while scanning), "Discard last scanned page" (only with pages), "Resume scan session"; no console errors.
+2. **Settings show the preset.** Settings > Scan Stitch. Expected: Watch folder = `C:\Dev\scan-stitch-demo\scanner` with the green text "Folder found"; Include subfolders on; file types `*.pdf`; template "Scan (default)" with pattern `Scan {date} {time}`; Recent destination folders "0 locations stored".
+3. **Bad folder.** Change the watch folder to `C:\Dev\nope`, tab out. Expected: "Folder not found" in red. Restore the real path; "Folder found" returns and the value persists after reopening settings.
+
+### B. Start dialog
+
+4. **Defaults.** Run "Start scan session". Expected: title "Start scanning"; Destination folder prefilled (vault root or the template folder); Template dropdown shows "Scan"; File name preview shows `Scan <today's date> <time>.pdf`; no "Recent" row yet; **Start is focused** (focus ring). **[OQ: Enter vs suggester popup]** The suggester popup must NOT be open on load.
+5. **Inline validation.** Clear the destination and type a nonexistent folder or press Enter on an invalid state. Expected: no error shown while typing before the first submit; after pressing Start/Enter on an invalid state an inline red message appears and the dialog stays open. Fix the value; the message disappears.
+6. **Folder suggester vs Enter. [OQ]** Type `Sca` in the folder field: a suggestion popup lists `Scans` and `Scans/Receipts`. Press Enter while the popup is open. Expected: Enter picks the highlighted suggestion and does NOT start the session; a second Enter starts it (when valid). Also check Esc with the popup open: closes the popup only, not the dialog (note actual behaviour either way).
+7. **Template preview.** Add a second template in settings first (Name `Receipt`, pattern `{folder} {date} {pages}`, destination folder `Scans/Receipts`). Reopen the dialog and pick `Receipt`. Expected: the destination changes to `Scans/Receipts`; preview reads `Receipts <date> ?.pdf` or similar where `?` stands for the final page count (record what it shows); switching back to `Scan` keeps the destination unless that template has its own folder.
+8. **Append toggle.** Toggle "Append to existing PDF". Expected: folder/template section hides, "PDF to append to" shows and is focused; typing `.pdf` names suggests PDFs only (none until items 21 or 25 have saved some; revisit then); Start with an empty or non-PDF target shows the inline error and does not start. Toggle off; the folder section returns with its previous values.
+9. **Vault root recent and recents order.** Complete three sessions that save (items 21, 25 and 26 produce them; do items 9 after those) into, in this order: `Inbox`, vault root, `Scans/Receipts`. Reopen the dialog. Expected: a "Recent" row of chips, most recent first: `Scans/Receipts`, `/` (vault root), `Inbox`; the chip matching the current destination is highlighted (selected). Clicking `/` sets the field to `/` and the preview/validation stay valid.
+10. **One-Enter start on a recent.** With a recent destination preselected (default is the most recent), open the dialog and press Enter once, without touching anything. Expected: the session starts immediately; the Scan pane opens with count 0. Cancel path: reopen, press Esc; the dialog closes and no session starts.
+
+### C. Scanning
+
+11. **Counter and thumbnail update.** Start a session (destination `Inbox`). Open the Scan pane (command or status bar). In a terminal run
+    `node scripts/make-demo-scans.mjs --drip C:\Dev\scan-stitch-demo\scanner-staged C:\Dev\scan-stitch-demo\scanner 4 --limit 3`.
+    Expected: the pane starts at 0 pages ("Waiting for the first page"); within about 1 to 3 seconds of each drop (stability delay 1 s) the counter goes 1, 2, 3 and the thumbnail shows the newest page ("Loading preview" then the image: page 1 headline "Quarterly report" with a big 1); the status bar shows "Scanning: 3 pages"; no `.part` file is ever counted.
+12. **New day folder is picked up.** Continue dripping the remaining staged files (`... scanner 3`). The first file of `2026_10_16` creates a brand-new day folder in the watched root. Expected: it is picked up like the rest, the count reaches 10 (note 6 from the first day plus 4 from the second), no restart needed, and the pages appear in arrival order.
+13. **Thumbnail frees properly. [OQ: thumbnail URL revocation]** While scanning, drip two more files, then switch to another tab and back. Expected: the newest-page thumbnail is never a broken-image icon; console shows no `blob:` load errors. (Revisited in items 17 and 38.)
+14. **Discard last, then rescan; scanner folder untouched.** Take the "before" hash listing (see Setup). Click "Discard last" once. Expected: the count drops by one and the thumbnail shows the previous page; nothing in the scanner folder changes. Trigger a rescan by dropping a new file (e.g. `--drip` of a fresh generated day: `node scripts/make-demo-scans.mjs C:\Dev\scan-stitch-demo\scanner-staged2 --days 2026_10_17` then drip it) and confirm the discarded file does NOT come back, while the new file lands at the END of the stack. Then after the session ends and is saved or discarded take the "after" listing and diff it against "before" plus only the files you deliberately added. Expected: byte-for-byte identical for every pre-existing file; no deletion, rename, or touch. Also check the discarded file is still on disk.
+15. **End session opens review on page 1.** Click "End session" (or the status bar item). Expected: a Review tab opens, the first page is shown large with its number "1" shown in the page and "Page 1 of N" style counter; the filmstrip lists N thumbnails; the filename field contains the template name; Save and Save and open are enabled; the view has keyboard focus (arrow keys work without clicking). The watcher is stopped: dropping another file now does not add a page.
+
+### D. Review keys (use `2026_10_13` as the base: p2 is 90, p5 is 180)
+
+Start a fresh session, drip `2026_10_15` and `2026_10_16` (10 pages), end the session.
+
+16. **R / Shift+R.** On page 2 (turned), `Shift+R` once. Expected: the thumbnail and large page turn upright, the thumbnail gets a rotated marker and its label says "rotated -90" or "270" deg as shown; `R` x4 returns to the starting state; on page 5, `R` twice fixes it.
+17. **Arrows, Home, End.** `Right` x3 moves the current page one at a time; `Home` goes to page 1; `End` goes to page 10; `Left` from page 1 does not wrap or error. The filmstrip scrolls the current thumbnail into view smoothly. **[OQ: thumbnail URL revocation]** After rotating several pages and scrolling the whole strip, no thumbnail is a broken image or "!" and the console shows no `blob:` errors.
+18. **Delete.** On page 3 press `Delete`. Expected: the page is removed; the counter shows one less and the current page moves to the page that took its place (the last page if it was last); `Backspace` does the same. Removing every page disables Save and Save and open.
+19. **Undo / redo.** `Ctrl+Z` brings the deleted page back at the same position; a further `Ctrl+Z` undoes the previous rotation; `Ctrl+Y` and `Ctrl+Shift+Z` redo in order. Expected: the Obsidian editor's undo is NOT triggered, and the keys act only while the review view has focus.
+20. **Ctrl+A.** Selects every page (counter shows "N selected"); `R` then rotates all; `Esc` is covered in item 22.
+21. **Enter saves (with a typed name).** Click into the filename field, type `Demo A`, press Enter. Expected: saves `Demo A.pdf` in the destination folder, Notice "Saved Demo A.pdf (10 pages)", the review tab closes. **[OQ: focus after save]** note where the keyboard focus lands afterwards (editor? nothing?); it should not be stuck in a closed view.
+22. **Esc with and without edits. [OQ: Esc/Enter intercepted by Obsidian's keymap]** Start another session, drip a few files, end it. (a) With no edits press `Esc`: expected the review closes immediately and the Scan pane returns to scanning (count intact). (b) End again, rotate one page or delete one, press `Esc`: a "Leave the review?" dialog appears with Cancel, Discard session, Keep scanning; `Esc`/Cancel returns to the review with focus back on it; "Keep scanning" returns to scanning with the edits stored; "Discard session" closes with the Notice "Scan session discarded" and the scanner files untouched. In both cases `Esc` must not be eaten by Obsidian first (e.g. it must not just blur or close an unrelated popover); `Enter` on the review view with focus on a page (not on a button/field) saves; confirm that Obsidian's own Enter/Esc keymap does not run in addition (no double save, no double close). With focus in the filename field, `Esc` returns focus to the review view and does not leave it.
+
+### E. Selection and reorder
+
+23. **Click, Shift+click, range rotate.** Click page 2, Shift+click page 5. Expected: pages 2 to 5 are highlighted, the counter shows "4 selected"; `R` rotates all four by 90; `Ctrl+Z` undoes the whole range in one step. A plain click collapses the selection to one page.
+24. **Drag reorder including gaps.** Drag page 8 onto the left half of page 2: it lands before page 2. Drag page 2 onto the right half of the last page: it lands at the end. Drag to the thin gaps between thumbnails, and to the empty area at the strip's end, and drop: expected the page lands in that slot, the numbers update, the dragged page becomes current, `Ctrl+Z` reverts, and a drag cancelled with `Esc` or dropped outside changes nothing. Dragging while saving does nothing.
+
+### F. Save
+
+25. **Save and Save and open; rotations. [OQ: focus after save]** In a fresh review of 10 pages fix the three wrong-way pages (day 1 p2 and p5, day 2 p3, i.e. pages 2, 5 and 9 of the 10), reorder one page to the front, delete one page, then click "Save and open" with name `Demo B`. Expected: Notice "Saved Demo B.pdf (9 pages)"; the PDF opens in a new tab; page order matches the filmstrip (check the big numbers) and EVERY page reads upright, with "TOP OF PAGE" at the top; open it in an external viewer too (Acrobat, browser) and confirm the same. Plain "Save" does the same without opening. Note the focus after Save (should be sensible, not stuck).
+26. **Name collision.** Start and finish another session saving as `Demo B` into the same folder. Expected: the file is saved as `Demo B 2.pdf`, never overwriting `Demo B.pdf` (compare its hash with before), and repeating gives `Demo B 3.pdf`. A name with illegal characters (`a/b:c?`) is sanitised, not rejected, and leaving the field blank falls back to the template name.
+27. **Append adds after existing pages.** Start a session with "Append to existing PDF" and target `Inbox/Demo B.pdf` (use the PDF suggester; only PDFs listed). Add 3 pages and end it. Expected: the review header reads "Appending to Demo B.pdf (9 existing pages)" and has no filename field. Save: Notice "Added 3 pages to Demo B.pdf (12 pages)"; the first 9 pages are unchanged and the 3 new ones follow; a backup of the original is in `.obsidian/plugins/scan-stitch/backups/`.
+28. **Encrypted or corrupt target refused.** Make bad targets (PowerShell), then refresh the vault view:
+    - corrupt: `$b = [IO.File]::ReadAllBytes('C:\Dev\scan-stitch-demo\vault\Inbox\Demo B.pdf'); [IO.File]::WriteAllBytes('C:\Dev\scan-stitch-demo\vault\Inbox\Corrupt.pdf', $b[0..300])`
+    - encrypted: encrypt a copy with `qpdf --encrypt user owner 256 -- "Demo B.pdf" Encrypted.pdf` (or print a demo page to PDF with a password in any PDF tool) and put it in `Inbox`.
+
+    Hash each target, run an append session against it, and press Save. Expected: a clear error Notice (about 10 s) that the target cannot be read/appended; the review stays open with the pages intact so you can save elsewhere; the target's hash is unchanged afterwards and no stray temp file is left next to it.
+
+### G. Session lifecycle
+
+29. **Quit mid-session and resume.** Start a session, drip 3 pages, then fully quit Obsidian (not just close the pane). Reopen the demo vault. Expected: a "Scan session in progress" dialog appears showing Pages 3, Destination, Started time, with Resume / Drop / Later. Resume: the Scan pane reopens with the same 3 pages and keeps watching (drip another file; the count goes to 4). Repeat with the session in the review phase (end it first, rotate a page, quit): resuming opens the review on the same pages with the rotation kept. "Drop" asks for confirmation and leaves scanned files in the scanner folder; "Later" closes the dialog, and "Resume scan session" from the command palette still works.
+30. **A second start.** With a session running, run "Start scan session". Expected: a "A scan session is already open" dialog with Resume current session / Replace it / Cancel; Replace asks "This drops the pages scanned so far" before doing anything.
+31. **Scanner root renamed mid-session.** Start a session, drip 2 pages, then rename `C:\Dev\scan-stitch-demo\scanner` to `scanner-away` in Explorer. Expected: a Notice "Scanner folder is unavailable" (once, not repeatedly) within a few seconds; pages already collected stay in the pane. Rename it back. Expected: a Notice "Scanner folder is back", the watcher recovers, and a newly dropped file is picked up (recovery). End the session and confirm the pages are still all there. Also try: rename the root, quit and reopen Obsidian, Resume: the unavailable notice shows once, the session is kept, and restoring the folder recovers it.
+
+### H. Appearance and scale
+
+32. **Light and dark theme.** Switch Appearance to Light, then Dark, with the Scan pane and the Review view open. Expected: text is legible, selection/current outlines visible, the rotated marker and error states visible, no hard-coded white or black blocks; compare the thumbnails' backgrounds in both.
+33. **Narrow sidebar.** Dock the Scan pane in the right sidebar and drag it to its narrowest width; also dock the review in a narrow pane. Expected: the counter, buttons (Discard last, End session, Save, Save and open) stay reachable and not clipped; the filmstrip scrolls horizontally; the key hint row wraps rather than overflows; the start dialog is usable at 320 px window width.
+34. **60+ page stack.** `node scripts/make-demo-scans.mjs C:\Dev\scan-stitch-demo\scanner-big --count 80` (pages 2, 5 and 9 are wrong-way), then drip with a 0 s delay into the watch root: `node scripts/make-demo-scans.mjs --drip C:\Dev\scan-stitch-demo\scanner-big C:\Dev\scan-stitch-demo\scanner 0`. Expected: all 80 are counted (the counter ends at exactly 80, in numeric order), Obsidian stays responsive during the burst; End session opens review in a couple of seconds; the strip scrolls smoothly (thumbnails are rendered lazily as they scroll into view); `End`/`Home` jump instantly; select all + `R` is instant; Save of 80 pages completes with a sensible "Saving..." state, the Notice reports 80 pages, and Obsidian's memory use does not keep growing after repeated sessions. **[OQ: thumbnail URL revocation]** after scrolling the whole strip, rotating, and returning from "Keep scanning" to review, no broken thumbnails remain.
+
+## Open questions this checklist is meant to settle
+
+| Question | Items |
+| --- | --- |
+| Enter vs the suggester popup in the start dialog (does Enter pick a suggestion or start?) | 4, 6, 10 |
+| Esc and Enter being intercepted by Obsidian's own keymap in the review view | 15, 21, 22 |
+| Keyboard focus after Save / Save and open and after closing the leave dialog | 21, 22, 25 |
+| Thumbnail object URLs being revoked while still shown (broken images, console blob errors) | 13, 17, 34 |
+
+## Results
+
+Tester: ____________  Date: ____________  Obsidian version: ____________  Plugin commit: ____________
+
+| # | Item | Pass / Fail | Notes |
+| --- | --- | --- | --- |
+| 1 | Plugin loads | | |
+| 2 | Settings show preset, "Folder found" | | |
+| 3 | Bad folder shows "Folder not found" | | |
+| 4 | Start dialog defaults, Start focused | | |
+| 5 | Inline validation | | |
+| 6 | Folder suggester vs Enter [OQ] | | |
+| 7 | Template preview and template folder | | |
+| 8 | Append toggle | | |
+| 9 | Vault root recent, recents order | | |
+| 10 | One-Enter start on a recent | | |
+| 11 | Counter and thumbnail update | | |
+| 12 | New day folder picked up | | |
+| 13 | Thumbnail not broken while scanning [OQ] | | |
+| 14 | Discard last, rescan at end, scanner tree unchanged | | |
+| 15 | End session opens review on page 1 | | |
+| 16 | R / Shift+R | | |
+| 17 | Arrows, Home, End; thumbnails intact [OQ] | | |
+| 18 | Delete / Backspace | | |
+| 19 | Undo / redo | | |
+| 20 | Ctrl+A | | |
+| 21 | Enter saves; focus after save [OQ] | | |
+| 22 | Esc with and without edits; keymap [OQ] | | |
+| 23 | Click, Shift+click, range rotate | | |
+| 24 | Drag reorder incl. gaps | | |
+| 25 | Save / Save and open, rotations in the PDF | | |
+| 26 | Name collision " 2" | | |
+| 27 | Append adds after existing pages | | |
+| 28 | Encrypted / corrupt target refused, original unchanged | | |
+| 29 | Quit mid-session and resume (scanning and review) | | |
+| 30 | Second start dialog | | |
+| 31 | Scanner root renamed, notice, recovery | | |
+| 32 | Light and dark theme | | |
+| 33 | Narrow sidebar | | |
+| 34 | 60+ page stack performance | | |
+| - | Console errors seen anywhere | | |
