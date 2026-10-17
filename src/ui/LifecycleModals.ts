@@ -1,5 +1,5 @@
 import { Modal, Setting } from 'obsidian';
-import type { App } from 'obsidian';
+import type { App, ButtonComponent } from 'obsidian';
 import type { SessionData } from '../types';
 import {
   EXISTING_SESSION_OPTIONS,
@@ -7,6 +7,16 @@ import {
   sessionSummary,
   type ExistingSessionChoice,
 } from './lifecycleLogic';
+
+/**
+ * Styles a button as destructive. `setDestructive()` exists from Obsidian 1.13;
+ * on older versions fall back to the `mod-warning` class the old API added.
+ */
+function markDestructive(button: ButtonComponent): void {
+  const b = button as unknown as { setDestructive?: () => unknown };
+  if (typeof b.setDestructive === 'function') b.setDestructive();
+  else button.buttonEl.addClass('mod-warning');
+}
 
 /** Shows a question with Back / confirm buttons in place of a modal's content. */
 function renderConfirm(modal: Modal, question: string, confirmLabel: string, onConfirm: () => void, onBack: () => void): void {
@@ -16,7 +26,10 @@ function renderConfirm(modal: Modal, question: string, confirmLabel: string, onC
   new Setting(contentEl)
     .setClass('scan-stitch-modal-buttons')
     .addButton((b) => b.setButtonText('Back').onClick(onBack))
-    .addButton((b) => b.setButtonText(confirmLabel).setWarning().onClick(onConfirm));
+    .addButton((b) => {
+      b.setButtonText(confirmLabel).onClick(onConfirm);
+      markDestructive(b);
+    });
 }
 
 export interface ResumePromptDeps {
@@ -112,7 +125,7 @@ export class ExistingSessionModal extends Modal {
       row.addButton((b) => {
         b.setButtonText(opt.label);
         if (opt.id === 'resume') b.setCta();
-        if (opt.destructive) b.setWarning();
+        if (opt.destructive) markDestructive(b);
         b.onClick(() => {
           const id = opt.id;
           if (id === 'cancel') {
