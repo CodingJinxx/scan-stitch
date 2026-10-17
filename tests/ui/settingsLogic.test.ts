@@ -136,3 +136,21 @@ describe('selectedDirFromFile', () => {
     expect(selectedDirFromFile(win('C:|Dev|Scans|b.pdf'), '')).toBe(win('C:|Dev|Scans'));
   });
 });
+
+describe('template folder guard', () => {
+  it('rejects a stored folder that leaves the vault', () => {
+    const t = base().templates;
+    for (const folder of ['../outside', 'a/../../b', 'C:\\x', '..\\x']) {
+      expect(validateTemplate(t, { name: 'New', pattern: 'x', folder }), folder).toBe('folder-invalid');
+    }
+    expect(validateTemplate(t, { name: 'New', pattern: 'x', folder: '  ' })).toBeNull();
+    expect(validateTemplate(t, { name: 'New', pattern: 'x', folder: './Docs/' })).toBeNull();
+  });
+  it('stores the normalised folder', () => {
+    const s = base();
+    addTemplate(s, { name: 'New', pattern: 'x', folder: '/Docs/./Inbox\\2026/' });
+    expect(s.templates[2]).toEqual({ name: 'New', pattern: 'x', folder: 'Docs/Inbox/2026' });
+    addTemplate(s, { name: 'Bad', pattern: 'x', folder: '../outside' });
+    expect(s.templates[3]).toEqual({ name: 'Bad', pattern: 'x' });
+  });
+});

@@ -213,6 +213,49 @@ describe('savePages: new file', () => {
   });
 });
 
+describe('savePages: destination guard', () => {
+  for (const bad of ['../outside', 'a/../../b', '..\\outside', 'a\\..\\..\\b', 'C:\\x', 'Docs/..']) {
+    it(`rejects ${bad} without touching the vault`, async () => {
+      const v = fakeVault();
+      const r = reader(await sources());
+      await expect(savePages(base({ destinationFolder: bad, readSource: r.readSource, vault: v.vault }))).rejects.toThrow(
+        'Destination folder is not valid',
+      );
+      expect(v.folders).toEqual([]);
+      expect(v.created).toEqual([]);
+      expect(r.calls).toEqual([]);
+    });
+  }
+
+  it('drops . segments and backslashes', async () => {
+    for (const [raw, want] of [
+      ['./Docs', 'Docs'],
+      ['Docs/./x', 'Docs/x'],
+      ['.\\Docs\\.\\x', 'Docs/x'],
+      ['/Docs', 'Docs'],
+    ]) {
+      const v = fakeVault();
+      const r = reader(await sources());
+      const res = await savePages(base({ destinationFolder: raw, readSource: r.readSource, vault: v.vault }));
+      expect(res.path, raw).toBe(`${want}/Scan.pdf`);
+      expect(v.folders, raw).toEqual([want]);
+    }
+  });
+
+  it('rejects an append target outside the vault without any IO', async () => {
+    const r = reader(await sources());
+    const a = fakeAppend(await makePdf(['old']));
+    for (const target of ['../outside/x.pdf', 'a\\..\\..\\x.pdf', 'C:\\x.pdf']) {
+      await expect(
+        savePages(base({ appendTarget: target, readSource: r.readSource, vault: fakeVault().vault, appendIO: a.io })),
+      ).rejects.toThrow(SaveError);
+    }
+    expect(a.state.reads).toBe(0);
+    expect(a.state.writes).toBe(0);
+    expect(r.calls).toEqual([]);
+  });
+});
+
 describe('savePages: append', () => {
   it('appends after the existing pages via verified replace', async () => {
     const v = fakeVault();

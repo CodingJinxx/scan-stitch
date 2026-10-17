@@ -3,6 +3,7 @@ import { sanitizeFileName, uniqueName } from '../core/template';
 import { AppendTargetError, MergeSourceError, mergePages, type MergeResult, type MergeSource } from '../pdf/merge';
 import { replaceWithVerify, type ReplaceIO } from '../pdf/safeReplace';
 import type { PageRef } from '../types';
+import { vaultSegments } from './startLogic';
 
 /** Save orchestration for the review screen. Pure: all IO is injected (no Obsidian imports). */
 
@@ -64,12 +65,9 @@ function pageError(position: number, path: string, cause: unknown): SaveError {
   return new SaveError(`Page ${position + 1} (${baseName(path)}) could not be read.`, { cause });
 }
 
-function normalizeFolder(folder: string): string {
-  return folder
-    .replace(/\\/g, '/')
-    .split('/')
-    .filter((p) => p !== '')
-    .join('/');
+/** Vault folder without empty or `.` segments ('' is the root); null when it is not inside the vault. */
+function normalizeFolder(folder: string): string | null {
+  return vaultSegments(folder)?.join('/') ?? null;
 }
 
 function cleanName(raw: string): string {
@@ -123,6 +121,10 @@ export async function savePages(deps: SaveDeps): Promise<SaveResult> {
   if (deps.appendTarget !== null) {
     const target = deps.appendTarget;
     const name = baseName(target);
+    const segments = vaultSegments(target);
+    if (segments === null || segments.length === 0) {
+      throw new SaveError(`Could not append to ${name}: the path is not inside the vault.`);
+    }
     const io = deps.appendIO;
     if (!io) throw new SaveError(`Could not append to ${name}: no access to the file.`);
     try {
@@ -157,6 +159,7 @@ export async function savePages(deps: SaveDeps): Promise<SaveResult> {
   }
 
   const folder = normalizeFolder(deps.destinationFolder);
+  if (folder === null) throw new SaveError('Destination folder is not valid. Choose a folder inside the vault.');
   const join = (n: string): string => (folder === '' ? `${n}.pdf` : `${folder}/${n}.pdf`);
   const sources = await buildSources(pages, deps.readSource);
   let result: MergeResult;

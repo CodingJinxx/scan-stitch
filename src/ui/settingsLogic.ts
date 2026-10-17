@@ -1,4 +1,5 @@
 import type { ScanStitchSettings, Template } from '../types';
+import { normalizeDestination } from './startLogic';
 
 export interface PatternToggles {
   pdf: boolean;
@@ -29,12 +30,13 @@ export function parseBoundedInt(raw: string, min: number, max: number): IntResul
   return value >= min && value <= max ? { ok: true, value } : { ok: false };
 }
 
-export type TemplateError = 'name-required' | 'name-duplicate' | 'pattern-required';
+export type TemplateError = 'name-required' | 'name-duplicate' | 'pattern-required' | 'folder-invalid';
 
 export const TEMPLATE_ERROR_TEXT: Record<TemplateError, string> = {
   'name-required': 'Enter a name',
   'name-duplicate': 'A template with this name already exists',
   'pattern-required': 'Enter a pattern',
+  'folder-invalid': 'Choose a folder inside the vault',
 };
 
 export interface TemplateDraft {
@@ -56,13 +58,16 @@ export function validateTemplate(
   );
   if (clash) return 'name-duplicate';
   if (candidate.pattern.trim() === '') return 'pattern-required';
+  const folder = candidate.folder ?? '';
+  if (folder.trim() !== '' && normalizeDestination(folder) === '') return 'folder-invalid';
   return null;
 }
 
 function toTemplate(d: TemplateDraft): Template {
   const t: Template = { name: d.name.trim(), pattern: d.pattern.trim() };
-  const folder = d.folder?.trim();
-  if (folder) t.folder = folder;
+  // Same guard as the start dialog: no `.`/`..` segments, nothing outside the vault.
+  const folder = normalizeDestination(d.folder ?? '');
+  if (folder !== '') t.folder = folder;
   return t;
 }
 

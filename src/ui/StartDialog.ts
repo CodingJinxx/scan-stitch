@@ -144,8 +144,8 @@ export class StartDialog extends Modal {
         dd.setValue(this.templateName);
         dd.onChange((name) => {
           this.templateName = name;
-          const stored = pickTemplate(this.deps.settings, name).folder;
-          if (stored !== undefined && stored !== '') {
+          const stored = normalizeDestination(pickTemplate(this.deps.settings, name).folder ?? '');
+          if (stored !== '') {
             this.destination = stored;
             this.folderInput.value = stored;
           }

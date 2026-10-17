@@ -161,3 +161,49 @@ describe('root and normalisation (review fixes)', () => {
     expect(validateStart(a, () => true)).toBeNull();
   });
 });
+
+describe('path traversal guard', () => {
+  const st: StartState = {
+    watchRoot: 'C:/Scans', appendMode: false, destination: 'Docs',
+    templateName: 'Scan', filename: 'x', appendTarget: '',
+  };
+  it('rejects any .. segment', () => {
+    for (const raw of ['..', '../outside', 'a/../../b', 'Docs/..', '..\\outside', 'a\\..\\..\\b', '/../x', 'a/.. /b']) {
+      expect(normalizeDestination(raw), raw).toBe('');
+      expect(validateStart({ ...st, destination: raw }), raw).toBe('no-destination');
+      expect(buildInit({ ...st, destination: raw }), raw).toBeNull();
+    }
+  });
+  it('drops . segments', () => {
+    expect(normalizeDestination('./Docs')).toBe('Docs');
+    expect(normalizeDestination('Docs/./x')).toBe('Docs/x');
+    expect(normalizeDestination('.\\Docs')).toBe('Docs');
+    expect(normalizeDestination('Docs\\.\\x')).toBe('Docs/x');
+    expect(normalizeDestination('./')).toBe('/');
+  });
+  it('rejects absolute Windows paths and keeps a leading slash vault-relative', () => {
+    expect(normalizeDestination('C:\\x')).toBe('');
+    expect(normalizeDestination('C:/x')).toBe('');
+    expect(normalizeDestination('\\\\server\\share')).toBe('server/share');
+    expect(normalizeDestination('/Docs/x')).toBe('Docs/x');
+    expect(normalizeDestination('\\Docs')).toBe('Docs');
+  });
+  it('defaultDestination ignores an unsafe template folder or recent', () => {
+    expect(defaultDestination(settings(), { name: 'x', pattern: 'x', folder: '../outside' })).toBe('');
+    expect(defaultDestination(settings({ recentLocations: ['a/../../b'] }), { name: 'x', pattern: 'x' })).toBe('');
+  });
+  it('rejects an append target outside the vault', () => {
+    for (const t of ['../outside/x.pdf', 'a\\..\\..\\x.pdf', 'C:\\x.pdf', './']) {
+      const a = { ...st, appendMode: true, appendTarget: t };
+      expect(validateStart(a, () => true), t).toBe('append-target-invalid');
+      expect(buildInit(a, () => true), t).toBeNull();
+    }
+  });
+  it('normalises an append target before checking and using it', () => {
+    const seen: string[] = [];
+    const a = { ...st, appendMode: true, appendTarget: '/A\\./B/x.pdf' };
+    const init = buildInit(a, (p) => (seen.push(p), true));
+    expect(seen).toContain('A/B/x.pdf');
+    expect(init).toEqual({ destinationFolder: 'A/B', templateName: 'Scan', filename: 'x', appendTarget: 'A/B/x.pdf' });
+  });
+});

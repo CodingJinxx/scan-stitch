@@ -33,13 +33,30 @@ export function pickTemplate(settings: ScanStitchSettings, name?: string): Templ
 }
 
 /**
+ * Segments of a vault-relative path: backslashes count as slashes, empty and `.`
+ * segments are dropped, a leading slash is ignored. Returns null for a path that
+ * could leave the vault or is not vault-relative: a `..` segment (or any segment
+ * made only of dots and spaces, which Windows may shorten to `..`) or a `:`
+ * (a drive such as `C:\x`). Obsidian's `normalizePath` resolves neither.
+ */
+export function vaultSegments(raw: string): string[] | null {
+  const parts = raw
+    .trim()
+    .replace(/[\\]/g, '/')
+    .split('/')
+    .filter((p) => p !== '' && p !== '.');
+  return parts.some((p) => /^[. ]+$/.test(p) || p.includes(':')) ? null : parts;
+}
+
+/**
  * Canonical UI form of a destination: trimmed, single slashes, no leading or
- * trailing slash. The vault root is '/'. Empty input stays empty (not chosen).
+ * trailing slash, no `.` segments. The vault root is '/'. Empty input stays empty
+ * (not chosen); so does a path that is not inside the vault (see `vaultSegments`).
  */
 export function normalizeDestination(raw: string): string {
-  const t = raw.trim().replace(/[\\]/g, '/');
-  if (t === '') return '';
-  const parts = t.split('/').filter((p) => p !== '');
+  if (raw.trim() === '') return '';
+  const parts = vaultSegments(raw);
+  if (parts === null) return '';
   return parts.length === 0 ? '/' : parts.join('/');
 }
 
@@ -93,17 +110,24 @@ export function previewFilename(pattern: string, opts: PreviewOptions): string {
 export function validateStart(s: StartState, isPdf?: (path: string) => boolean): StartError | null {
   if (s.watchRoot.trim() === '') return 'no-watch-root';
   if (s.appendMode) {
-    const target = s.appendTarget.trim();
-    if (target === '') return 'no-append-target';
+    if (s.appendTarget.trim() === '') return 'no-append-target';
+    const target = appendTargetPath(s.appendTarget);
+    if (target === null) return 'append-target-invalid';
     return isPdf && !isPdf(target) ? 'append-target-invalid' : null;
   }
   return normalizeDestination(s.destination) === '' ? 'no-destination' : null;
 }
 
+/** Vault path of the PDF to append to, or null when it is not a file path inside the vault. */
+function appendTargetPath(raw: string): string | null {
+  const parts = vaultSegments(raw);
+  return parts === null || parts.length === 0 ? null : parts.join('/');
+}
+
 export function buildInit(s: StartState, isPdf?: (path: string) => boolean): StartInit | null {
   if (validateStart(s, isPdf) !== null) return null;
   if (s.appendMode) {
-    const target = s.appendTarget.trim();
+    const target = appendTargetPath(s.appendTarget) ?? '';
     const file = target.slice(target.lastIndexOf('/') + 1);
     return {
       destinationFolder: parentFolder(target),
