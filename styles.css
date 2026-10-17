@@ -222,6 +222,15 @@
   flex: 1 1 110px;
 }
 
+/* Obsidian dims disabled buttons only by opacity, which leaves a disabled accent button
+   looking active on dark themes (End session while in review). Drop the accent instead. */
+.scan-stitch-pane .scan-stitch-actions button:disabled {
+  background-color: var(--interactive-normal);
+  color: var(--text-faint);
+  box-shadow: none;
+  opacity: 1;
+}
+
 .scan-stitch-empty {
   display: flex;
   flex-direction: column;
