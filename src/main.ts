@@ -4,6 +4,7 @@ import { PDFDocument } from 'pdf-lib';
 import { loadSettings } from './core/settings';
 import { PageRenderer } from './pdf/pageRenderer';
 import { SessionController } from './scan/sessionController';
+import { ScanStitchSettingTab } from './ui/SettingsTab';
 import { ReviewView } from './ui/ReviewView';
 import { ScanPaneView } from './ui/ScanPaneView';
 import { StartDialog } from './ui/StartDialog';
@@ -73,6 +74,8 @@ export default class ScanStitchPlugin extends Plugin {
     this.statusEl.addEventListener('click', () => this.endSession());
     this.register(this.controller.onChange(() => this.updateStatusBar()));
     this.updateStatusBar();
+
+    this.addSettingTab(new ScanStitchSettingTab(this.app, this));
 
     this.addRibbonIcon('scan', 'Start scan session', () => this.startSession());
 
