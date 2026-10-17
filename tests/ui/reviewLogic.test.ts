@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ReviewCursor,
   autoFilename,
+  chooseFilename,
+  dropSlot,
   counterText,
   mapKey,
   reorderTarget,
@@ -20,7 +22,12 @@ describe('mapKey', () => {
   it('maps rotation keys', () => {
     expect(mapKey(key('r'))).toBe('rotateCw');
     expect(mapKey(key('R', { shiftKey: true }))).toBe('rotateCcw');
-    expect(mapKey(key('R'))).toBe('rotateCcw');
+    expect(mapKey(key('r', { shiftKey: true }))).toBe('rotateCcw');
+  });
+
+  it('decides rotation direction by shift only, so Caps Lock does not invert it', () => {
+    // Caps Lock on: plain press gives 'R', shift+press gives 'r'.
+    expect(mapKey(key('R'))).toBe('rotateCw');
     expect(mapKey(key('r', { shiftKey: true }))).toBe('rotateCcw');
   });
 
@@ -287,5 +294,46 @@ describe('autoFilename', () => {
         format,
       }),
     ).toBe('Letter 3');
+  });
+});
+
+describe('dropSlot', () => {
+  // four 10px-wide items with 12px gaps, strip padding before the first
+  const rects = [
+    { left: 16, right: 26 },
+    { left: 38, right: 48 },
+    { left: 60, right: 70 },
+    { left: 82, right: 92 },
+  ];
+
+  it('targets the item after a gap, before it', () => {
+    // gap between item 2 and item 3
+    expect(dropSlot(rects, 54)).toEqual({ index: 2, after: false });
+  });
+
+  it('targets the first item from the left padding', () => {
+    expect(dropSlot(rects, 4)).toEqual({ index: 0, after: false });
+  });
+
+  it('uses the item midpoint over an item', () => {
+    expect(dropSlot(rects, 40)).toEqual({ index: 1, after: false });
+    expect(dropSlot(rects, 46)).toEqual({ index: 2, after: false });
+  });
+
+  it('targets after the last item only past its midpoint or right edge', () => {
+    expect(dropSlot(rects, 90)).toEqual({ index: 3, after: true });
+    expect(dropSlot(rects, 200)).toEqual({ index: 3, after: true });
+  });
+
+  it('returns null for an empty strip', () => {
+    expect(dropSlot([], 10)).toBeNull();
+  });
+});
+
+describe('chooseFilename', () => {
+  it('uses the typed name, else the auto name when blank', () => {
+    expect(chooseFilename('Letter to bank', 'Scan 2026-10-17')).toBe('Letter to bank');
+    expect(chooseFilename('', 'Scan 2026-10-17')).toBe('Scan 2026-10-17');
+    expect(chooseFilename('   ', 'Scan 2026-10-17')).toBe('Scan 2026-10-17');
   });
 });

@@ -37,7 +37,8 @@ export function mapKey(e: KeyLike): ReviewAction | null {
   }
   switch (k) {
     case 'r':
-      return e.shiftKey || e.key === 'R' ? 'rotateCcw' : 'rotateCw';
+      // Shift alone decides the direction, so Caps Lock does not invert it.
+      return e.shiftKey ? 'rotateCcw' : 'rotateCw';
     case 'ArrowLeft':
       return 'prev';
     case 'ArrowRight':
@@ -176,6 +177,29 @@ export class ReviewCursor {
 export function reorderTarget(fromIndex: number, dropIndex: number, dropAfter: boolean): number {
   const insertAt = dropIndex + (dropAfter ? 1 : 0);
   return insertAt > fromIndex ? insertAt - 1 : insertAt;
+}
+
+export interface SlotRect {
+  left: number;
+  right: number;
+}
+
+/**
+ * Drop slot for a pointer at `clientX` over a filmstrip whose items have these rects (in
+ * page order): before the first item whose midpoint lies right of the pointer, else after
+ * the last item. Gaps and padding therefore resolve to the nearest neighbouring slot.
+ */
+export function dropSlot(rects: SlotRect[], clientX: number): { index: number; after: boolean } | null {
+  if (rects.length === 0) return null;
+  for (const [i, r] of rects.entries()) {
+    if ((r.left + r.right) / 2 > clientX) return { index: i, after: false };
+  }
+  return { index: rects.length - 1, after: true };
+}
+
+/** The typed file name, or the auto-generated one when the field is blank. */
+export function chooseFilename(typed: string, auto: string): string {
+  return typed.trim() === '' ? auto : typed;
 }
 
 /** Signed shortest turn from one rotation to another (-90, 0, 90 or 180). */

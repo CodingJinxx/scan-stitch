@@ -7,7 +7,17 @@ import type { PageRenderer } from '../pdf/pageRenderer';
 import type { ReplaceIO } from '../pdf/safeReplace';
 import type { SessionController } from '../scan/sessionController';
 import type { PageRef, ScanStitchSettings } from '../types';
-import { ReviewCursor, autoFilename, counterText, mapKey, reorderTarget, rotationDelta, type ReviewAction } from './reviewLogic';
+import {
+  ReviewCursor,
+  autoFilename,
+  chooseFilename,
+  counterText,
+  dropSlot,
+  mapKey,
+  reorderTarget,
+  rotationDelta,
+  type ReviewAction,
+} from './reviewLogic';
 import { savePages, type SaveVault } from './saveFlow';
 import { folderName, parentFolder } from './startLogic';
 import { REVIEW_VIEW_TYPE } from './viewTypes';
@@ -15,6 +25,8 @@ import { REVIEW_VIEW_TYPE } from './viewTypes';
 const MAIN_EDGE = 1400;
 const THUMB_EDGE = 160;
 const MAX_UPSCALE = 1.5;
+/** Drag payload type: a page id, never offered as plain text to editors. */
+const DRAG_MIME = 'application/x-scan-stitch-page';
 
 export interface ReviewDeps {
   controller: SessionController;
@@ -80,7 +92,8 @@ export class ReviewView extends ItemView {
   private mainToken = 0;
   private scrolledId: string | null = null;
 
-  private filename = '';
+  /** The template-generated name, the fallback when the field is blank. */
+  private autoNameValue = '';
   private filenameEdited = false;
   private existingPages: number | 'loading' | 'error' = 'loading';
   private saving: 'save' | 'open' | null = null;
@@ -206,7 +219,7 @@ export class ReviewView extends ItemView {
     this.resetView();
     this.cursor = new ReviewCursor();
     this.filenameEdited = false;
-    this.filename = '';
+    this.autoNameValue = '';
     const root = this.rootEl;
 
     const bar = root.createDiv({ cls: 'scan-stitch-review-bar' });
@@ -226,7 +239,6 @@ export class ReviewView extends ItemView {
       });
       field.createSpan({ cls: 'scan-stitch-review-ext', text: '.pdf' });
       input.addEventListener('input', () => {
-        this.filename = input.value;
         this.filenameEdited = true;
       });
       this.nameInput = input;
@@ -340,10 +352,10 @@ export class ReviewView extends ItemView {
 
   private updateFilename(s: SessionState): void {
     const input = this.nameInput;
-    if (!input || this.filenameEdited) return;
+    if (!input) return;
     const name = this.autoName(s);
-    this.filename = name;
-    if (input.value !== name) input.value = name;
+    this.autoNameValue = name;
+    if (!this.filenameEdited && input.value !== name) input.value = name;
   }
 
   private updateButtons(count: number): void {
@@ -499,7 +511,7 @@ export class ReviewView extends ItemView {
       this.drag = { id, target: null, after: false };
       if (e.dataTransfer) {
         e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', id);
+        e.dataTransfer.setData(DRAG_MIME, id);
       }
       this.thumbs.get(id)?.el.addClass('is-dragging');
     });
@@ -508,17 +520,17 @@ export class ReviewView extends ItemView {
       if (!this.drag) return;
       e.preventDefault();
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-      let item = this.itemFrom(e);
-      let after: boolean;
-      if (item) {
-        const r = item.getBoundingClientRect();
-        after = e.clientX > r.left + r.width / 2;
-      } else {
-        // Empty space after the last page.
-        item = strip.lastElementChild as HTMLElement | null;
-        after = true;
-      }
-      const target = item?.dataset.id ?? null;
+      // Hit-test against every item, so gaps and padding resolve to the nearest slot.
+      const items = Array.from(strip.children) as HTMLElement[];
+      const slot = dropSlot(
+        items.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right };
+        }),
+        e.clientX,
+      );
+      const target = slot ? (items[slot.index]?.dataset.id ?? null) : null;
+      const after = slot?.after ?? false;
       if (target === this.drag.target && after === this.drag.after) return;
       this.drag.target = target;
       this.drag.after = after;
@@ -765,6 +777,7 @@ export class ReviewView extends ItemView {
     new LeaveReviewModal(this.app, {
       keepScanning: () => this.keepScanning(),
       discard: () => this.discard(),
+      dismissed: () => this.focusView(),
     }).open();
   }
 
@@ -785,8 +798,7 @@ export class ReviewView extends ItemView {
   // ---- saving ----
 
   private currentFilename(): string {
-    const name = this.nameInput ? this.nameInput.value : this.filename;
-    return name.trim() === '' ? this.filename : name;
+    return chooseFilename(this.nameInput?.value ?? '', this.autoNameValue);
   }
 
   private async save(open: boolean): Promise<void> {
@@ -798,6 +810,7 @@ export class ReviewView extends ItemView {
     this.updateButtons(data.pages.length);
     const { app } = this;
     const { controller } = this.deps;
+    const append = data.appendTarget !== null ? this.appendIO(data.appendTarget) : null;
     try {
       const result = await savePages({
         pages: data.pages,
@@ -806,7 +819,8 @@ export class ReviewView extends ItemView {
         filename,
         appendTarget: data.appendTarget,
         vault: this.vaultIO(),
-        appendIO: data.appendTarget !== null ? this.appendIO(data.appendTarget) : undefined,
+        appendIO: append?.io,
+        appendBackupPath: append?.backupPath,
       });
 
       // Recent locations are folders only, recorded on a successful save.
@@ -829,14 +843,22 @@ export class ReviewView extends ItemView {
           : `Saved ${name} (${plural(result.pageCount, 'page')})`,
       );
       if (open) {
-        const file = app.vault.getAbstractFileByPath(result.path);
-        if (file instanceof TFile) await app.workspace.getLeaf(true).openFile(file);
+        try {
+          const file = app.vault.getAbstractFileByPath(result.path);
+          if (!(file instanceof TFile)) throw new Error('not found');
+          await app.workspace.getLeaf(true).openFile(file);
+        } catch {
+          new Notice(`Saved, but could not open ${name}`);
+        }
       }
     } catch (e) {
       new Notice(e instanceof Error ? e.message : String(e), 10000);
     } finally {
       this.saving = null;
-      if (!this.closed) this.refresh();
+      if (!this.closed) {
+        this.refresh();
+        this.focusView();
+      }
     }
   }
 
@@ -868,7 +890,7 @@ export class ReviewView extends ItemView {
     };
   }
 
-  private appendIO(target: string): ReplaceIO {
+  private appendIO(target: string): { io: ReplaceIO; backupPath: string } {
     const vault = this.app.vault;
     const adapter = vault.adapter;
     const file = (): TFile => {
@@ -878,7 +900,7 @@ export class ReviewView extends ItemView {
     };
     const dir = normalizePath(`${this.deps.pluginDir}/backups`);
     const backup = normalizePath(`${dir}/${moment().format('YYYYMMDD-HHmmss')}-${baseName(target)}`);
-    return {
+    const io: ReplaceIO = {
       read: async () => new Uint8Array(await vault.readBinary(file())),
       write: async (bytes) => {
         await vault.modifyBinary(file(), toArrayBuffer(bytes));
@@ -891,15 +913,20 @@ export class ReviewView extends ItemView {
         await adapter.remove(backup);
       },
     };
+    return { io, backupPath: backup };
   }
 }
 
 interface LeaveChoices {
   keepScanning(): void;
   discard(): void;
+  /** Closed without a choice (Cancel, Esc, click outside). */
+  dismissed(): void;
 }
 
 class LeaveReviewModal extends Modal {
+  private chosen = false;
+
   constructor(
     app: App,
     private readonly choices: LeaveChoices,
@@ -919,11 +946,13 @@ class LeaveReviewModal extends Modal {
     cancel.addEventListener('click', () => this.close());
     const discard = actions.createEl('button', { cls: 'mod-warning', text: 'Discard session' });
     discard.addEventListener('click', () => {
+      this.chosen = true;
       this.close();
       this.choices.discard();
     });
     const keep = actions.createEl('button', { cls: 'mod-cta', text: 'Keep scanning' });
     keep.addEventListener('click', () => {
+      this.chosen = true;
       this.close();
       this.choices.keepScanning();
     });
@@ -932,5 +961,7 @@ class LeaveReviewModal extends Modal {
 
   onClose(): void {
     this.contentEl.empty();
+    // After the modal has released focus, hand it back to the review view.
+    if (!this.chosen) window.setTimeout(() => this.choices.dismissed(), 0);
   }
 }

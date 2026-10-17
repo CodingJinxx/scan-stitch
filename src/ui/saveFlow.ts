@@ -37,6 +37,8 @@ export interface SaveDeps {
   vault: SaveVault;
   /** IO for the append target (read, write, backup). Required in append mode. */
   appendIO?: ReplaceIO;
+  /** Where `appendIO.saveBackup` keeps the original, named in the error if the write fails. */
+  appendBackupPath?: string;
   /** Injectable for tests; defaults to `mergePages`. */
   merge?: (sources: MergeSource[], appendTo?: Uint8Array) => Promise<MergeResult>;
 }
@@ -129,7 +131,18 @@ export async function savePages(deps: SaveDeps): Promise<SaveResult> {
       const existingCount = await countPages(existing);
       const expected = existingCount + pages.length;
       // Hand replaceWithVerify the bytes already read, so the file is read once.
-      const once: ReplaceIO = { ...io, read: () => Promise.resolve(existing) };
+      const once: ReplaceIO = {
+        ...io,
+        read: () => Promise.resolve(existing),
+        write: async (bytes) => {
+          try {
+            await io.write(bytes);
+          } catch (e) {
+            const where = deps.appendBackupPath ? ` A copy of the original was kept at ${deps.appendBackupPath}.` : '';
+            throw new SaveError(`Could not append to ${name}: ${messageOf(e).replace(/\.$/, '')}.${where}`, { cause: e });
+          }
+        },
+      };
       await replaceWithVerify(once, (bytes) => merge(sources, bytes).catch(mapMergeError), expected);
       return { path: target, pageCount: expected, added: pages.length };
     } catch (e) {

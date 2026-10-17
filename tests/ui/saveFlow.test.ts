@@ -39,7 +39,7 @@ function fakeVault(existing: string[] = []) {
   };
 }
 
-function fakeAppend(original: Uint8Array) {
+function fakeAppend(original: Uint8Array, opts: { failWrite?: boolean } = {}) {
   const state = { file: original, backup: null as Uint8Array | null, writes: 0, reads: 0 };
   const io: ReplaceIO = {
     read: () => {
@@ -48,6 +48,7 @@ function fakeAppend(original: Uint8Array) {
     },
     write: (b) => {
       state.writes++;
+      if (opts.failWrite) return Promise.reject(new Error('EBUSY: resource busy'));
       state.file = b;
       return Promise.resolve();
     },
@@ -282,5 +283,25 @@ describe('savePages: append', () => {
     await expect(savePages(base({ appendTarget: 'X.pdf', readSource: r.readSource, vault: fakeVault().vault }))).rejects.toThrow(
       SaveError,
     );
+  });
+
+  it('names the backup location when writing the target fails', async () => {
+    const r = reader(await sources());
+    const original = await makePdf(['old']);
+    const a = fakeAppend(original, { failWrite: true });
+    await expect(
+      savePages(
+        base({
+          appendTarget: 'Notes/X.pdf',
+          readSource: r.readSource,
+          vault: fakeVault().vault,
+          appendIO: a.io,
+          appendBackupPath: 'plugin-dir/backups/20261017-101500-X.pdf',
+        }),
+      ),
+    ).rejects.toThrow(
+      'Could not append to X.pdf: EBUSY: resource busy. A copy of the original was kept at plugin-dir/backups/20261017-101500-X.pdf.',
+    );
+    expect(a.state.backup).toBe(original);
   });
 });
