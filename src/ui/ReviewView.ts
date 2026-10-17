@@ -1,4 +1,4 @@
-import { ItemView, Modal, Notice, Platform, TFile, TFolder, moment, normalizePath, type App, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Modal, Notice, Platform, Scope, TFile, TFolder, moment, normalizePath, type App, type WorkspaceLeaf } from 'obsidian';
 import { PDFDocument } from 'pdf-lib';
 import { pushRecent } from '../core/recents';
 import type { SessionState } from '../core/sessionState';
@@ -104,6 +104,35 @@ export class ReviewView extends ItemView {
     private readonly deps: ReviewDeps,
   ) {
     super(leaf);
+    // Obsidian's global keymap handles Escape in the capture phase (it activates the last
+    // markdown tab) before our element listener runs. A scope pushed while the review has
+    // focus is asked first, so Escape stays ours (View.scope needs a newer minAppVersion).
+    this.keyScope = new Scope(this.app.scope);
+    this.keyScope.register([], 'Escape', (evt) => {
+      this.onKeyDown(evt);
+      return false;
+    });
+  }
+
+  private readonly keyScope: Scope;
+  private scopePushed = false;
+
+  private readonly onFocusIn = (): void => {
+    if (this.scopePushed) return;
+    this.app.keymap.pushScope(this.keyScope);
+    this.scopePushed = true;
+  };
+
+  private readonly onFocusOut = (e: FocusEvent): void => {
+    const to = e.relatedTarget as Node | null;
+    if (to && this.rootEl.contains(to)) return;
+    this.popKeyScope();
+  };
+
+  private popKeyScope(): void {
+    if (!this.scopePushed) return;
+    this.app.keymap.popScope(this.keyScope);
+    this.scopePushed = false;
   }
 
   getViewType(): string {
@@ -124,6 +153,8 @@ export class ReviewView extends ItemView {
     this.contentEl.addClass('scan-stitch-review-host');
     this.rootEl = this.contentEl.createDiv({ cls: 'scan-stitch-review', attr: { tabindex: '0', 'aria-label': 'Review scan' } });
     this.rootEl.addEventListener('keydown', this.onKeyDown);
+    this.rootEl.addEventListener('focusin', this.onFocusIn);
+    this.rootEl.addEventListener('focusout', this.onFocusOut);
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', (leaf) => {
         if (leaf === this.leaf) this.focusView();
@@ -141,6 +172,9 @@ export class ReviewView extends ItemView {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.rootEl?.removeEventListener('keydown', this.onKeyDown);
+    this.rootEl?.removeEventListener('focusin', this.onFocusIn);
+    this.rootEl?.removeEventListener('focusout', this.onFocusOut);
+    this.popKeyScope();
     this.releaseObservers();
     this.thumbs.clear();
     this.mainToken++;
@@ -688,7 +722,8 @@ export class ReviewView extends ItemView {
   // ---- keyboard and actions ----
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    if (e.isComposing) return;
+    // Already handled through the view scope (Escape), which sees the event first.
+    if (e.isComposing || e.defaultPrevented) return;
     const target = e.target as HTMLElement | null;
     const tag = target?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') {
