@@ -1,0 +1,32 @@
+{
+  "name": "scan-stitch",
+  "version": "0.1.0",
+  "description": "Combine one-file-per-page scanner output into a single PDF with fast rotation review.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [],
+  "author": "Jay Leimer",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
+    "moment": "^2.31.0",
+    "obsidian": "^1.14.4",
+    "typescript": "~5.8",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.5"
+  }
+}
