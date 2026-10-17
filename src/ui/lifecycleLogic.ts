@@ -45,3 +45,12 @@ export function confirmText(action: ExistingSessionChoice | 'drop' | 'resume'): 
   if (action === 'drop') return 'Drop this scan session? Scanned pages stay in the scanner folder.';
   return null;
 }
+
+/**
+ * Notice for a backup an append left behind (the write was interrupted or failed), or
+ * null when there is none. `listing` is the backups folder's content, null if it does not exist.
+ */
+export function keptBackupNotice(dir: string, listing: { files: string[]; folders: string[] } | null): string | null {
+  if (!listing || listing.files.length === 0) return null;
+  return `Scan Stitch kept a backup of a PDF it was changing (${dir}). If the PDF looks wrong, copy the backup back.`;
+}

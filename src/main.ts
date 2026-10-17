@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Notice, Plugin, loadPdfJs, type Modal, type WorkspaceLeaf } from 'obsidian';
+import { Notice, Plugin, loadPdfJs, normalizePath, type Modal, type WorkspaceLeaf } from 'obsidian';
 import { PDFDocument } from 'pdf-lib';
 import { loadSettings } from './core/settings';
 import { PageRenderer } from './pdf/pageRenderer';
@@ -9,7 +9,7 @@ import { ExistingSessionModal, ResumePromptModal } from './ui/LifecycleModals';
 import { ReviewView } from './ui/ReviewView';
 import { ScanPaneView } from './ui/ScanPaneView';
 import { StartDialog } from './ui/StartDialog';
-import { resumeChoice } from './ui/lifecycleLogic';
+import { keptBackupNotice, resumeChoice } from './ui/lifecycleLogic';
 import { paneModel, statusText } from './ui/paneModel';
 import { REVIEW_VIEW_TYPE, SCAN_VIEW_TYPE } from './ui/viewTypes';
 import type { ScanStitchSettings, SessionData } from './types';
@@ -73,7 +73,7 @@ export default class ScanStitchPlugin extends Plugin {
           saveSettings: () => this.saveSettings(),
           openScanPane: () => this.openScanPane(),
           readSource: readBytes,
-          pluginDir: this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
+          pluginDir: this.pluginDir(),
         }),
     );
 
@@ -112,7 +112,27 @@ export default class ScanStitchPlugin extends Plugin {
       callback: () => void this.resumeSession(),
     });
 
-    this.app.workspace.onLayoutReady(() => this.offerResume());
+    this.app.workspace.onLayoutReady(() => {
+      this.offerResume();
+      void this.reportKeptBackups();
+    });
+  }
+
+  private pluginDir(): string {
+    return this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+  }
+
+  /** Once per load: tell the user if an interrupted append left its backup behind (see ReviewView.appendIO). */
+  private async reportKeptBackups(): Promise<void> {
+    try {
+      const adapter = this.app.vault.adapter;
+      const dir = normalizePath(`${this.pluginDir()}/backups`);
+      const listing = (await adapter.exists(dir)) ? await adapter.list(dir) : null;
+      const msg = keptBackupNotice(dir, listing);
+      if (msg && !this.unloaded) new Notice(msg, 15000);
+    } catch {
+      // only a hint; never break loading
+    }
   }
 
   onunload(): void {

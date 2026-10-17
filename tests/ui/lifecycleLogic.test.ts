@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EXISTING_SESSION_OPTIONS,
   confirmText,
+  keptBackupNotice,
   resumeChoice,
   sessionSummary,
 } from '../../src/ui/lifecycleLogic';
@@ -69,5 +70,22 @@ describe('existing session options', () => {
   });
   it('drop confirm text', () => {
     expect(confirmText('drop')).toBe('Drop this scan session? Scanned pages stay in the scanner folder.');
+  });
+});
+
+describe('keptBackupNotice', () => {
+  const dir = 'config/plugins/scan-stitch/backups';
+  it('is null without a backups folder or when it is empty', () => {
+    expect(keptBackupNotice(dir, null)).toBeNull();
+    expect(keptBackupNotice(dir, { files: [], folders: [] })).toBeNull();
+  });
+  it('names the folder once when backups were kept', () => {
+    const msg = keptBackupNotice(dir, { files: [`${dir}/20261017-101500-X.pdf`, `${dir}/20261017-101600-Y.pdf`], folders: [] });
+    expect(msg).toBe(
+      'Scan Stitch kept a backup of a PDF it was changing (config/plugins/scan-stitch/backups). If the PDF looks wrong, copy the backup back.',
+    );
+  });
+  it('ignores empty subfolders', () => {
+    expect(keptBackupNotice(dir, { files: [], folders: [`${dir}/tmp`] })).toBeNull();
   });
 });
