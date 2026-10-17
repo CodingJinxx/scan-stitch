@@ -82,7 +82,7 @@ describe('keptBackupNotice', () => {
   it('names the folder once when backups were kept', () => {
     const msg = keptBackupNotice(dir, { files: [`${dir}/20261017-101500-X.pdf`, `${dir}/20261017-101600-Y.pdf`], folders: [] });
     expect(msg).toBe(
-      'Scan Stitch kept a backup of a PDF it was changing (config/plugins/scan-stitch/backups). If the PDF looks wrong, copy the backup back.',
+      'Scan Stitch kept a backup of a PDF it was changing (config/plugins/scan-stitch/backups). If the PDF looks wrong, copy the backup back. Once you have checked the PDF, delete the backup; this message appears at every start while a backup is there.',
     );
   });
   it('ignores empty subfolders', () => {

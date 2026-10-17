@@ -52,5 +52,5 @@ export function confirmText(action: ExistingSessionChoice | 'drop' | 'resume'): 
  */
 export function keptBackupNotice(dir: string, listing: { files: string[]; folders: string[] } | null): string | null {
   if (!listing || listing.files.length === 0) return null;
-  return `Scan Stitch kept a backup of a PDF it was changing (${dir}). If the PDF looks wrong, copy the backup back.`;
+  return `Scan Stitch kept a backup of a PDF it was changing (${dir}). If the PDF looks wrong, copy the backup back. Once you have checked the PDF, delete the backup; this message appears at every start while a backup is there.`;
 }
