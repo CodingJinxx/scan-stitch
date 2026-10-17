@@ -38,6 +38,7 @@ export class StartDialog extends Modal {
   private pdfInput!: HTMLInputElement;
   private startBtn!: HTMLButtonElement;
   private suggesters: { close(): void }[] = [];
+  private folderSuggest: FolderSuggest | null = null;
 
   constructor(
     app: App,
@@ -83,8 +84,13 @@ export class StartDialog extends Modal {
   }
 
   private focusInitial(): void {
-    if (this.isValid()) this.startBtn.focus();
-    else this.folderInput.focus();
+    if (this.isValid()) {
+      this.startBtn.focus();
+      return;
+    }
+    this.folderInput.focus();
+    // The suggester opens on any focus event; close it so it only appears once the user types.
+    this.folderSuggest?.close();
   }
 
   private isValid(): boolean {
@@ -120,12 +126,11 @@ export class StartDialog extends Modal {
       this.destination = this.folderInput.value;
       this.refresh();
     });
-    this.suggesters.push(
-      new FolderSuggest(this.app, this.folderInput, (path) => {
-        this.destination = path;
-        this.refresh();
-      }),
-    );
+    this.folderSuggest = new FolderSuggest(this.app, this.folderInput, (path) => {
+      this.destination = path;
+      this.refresh();
+    });
+    this.suggesters.push(this.folderSuggest);
 
     this.recentEl = root.createDiv({ cls: 'scan-stitch-recent' });
 
