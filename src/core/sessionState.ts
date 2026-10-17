@@ -31,6 +31,8 @@ export class SessionState {
     for (let i = 0; i < pageCount; i++) {
       added.push({ id: `${path}#${i}`, path, pageIndex: i, kind, rotation: 0, seenAt });
     }
+    if (added.length === 0) return added;
+    this.clearHistory();
     this.d.pages.push(...added);
     return added;
   }
@@ -39,6 +41,7 @@ export class SessionState {
     const last = this.d.pages[this.d.pages.length - 1];
     if (!last) return null;
     const path = last.path;
+    this.clearHistory();
     this.d.pages = this.d.pages.filter((p) => p.path !== path);
     this.d.discardedPaths.push(path);
     return path;
@@ -46,6 +49,7 @@ export class SessionState {
 
   rotate(ids: string[], dir: 1 | -1): void {
     const set = new Set(ids);
+    if (!this.d.pages.some((p) => set.has(p.id))) return;
     this.checkpoint();
     this.d.pages = this.d.pages.map((p) =>
       set.has(p.id) ? { ...p, rotation: (((p.rotation + dir * 90) % 360) + 360) % 360 as Rotation } : p,
@@ -54,6 +58,7 @@ export class SessionState {
 
   remove(ids: string[]): void {
     const set = new Set(ids);
+    if (!this.d.pages.some((p) => set.has(p.id))) return;
     this.checkpoint();
     this.d.pages = this.d.pages.filter((p) => !set.has(p.id));
   }
@@ -95,6 +100,11 @@ export class SessionState {
       pages: clonePages(this.d.pages),
       discardedPaths: [...this.d.discardedPaths],
     };
+  }
+
+  private clearHistory(): void {
+    this.undoStack = [];
+    this.redoStack = [];
   }
 
   private checkpoint(): void {

@@ -157,3 +157,45 @@ describe('SessionState serialisation', () => {
     expect(s.data.pages).toHaveLength(1);
   });
 });
+
+describe('SessionState history barriers', () => {
+  it('addFile after remove clears undo and keeps the new pages', () => {
+    const s = three();
+    s.remove(['a.pdf#0']);
+    s.addFile('n.pdf', 2, 'pdf', 9);
+    expect(s.undo()).toBe(false);
+    expect(ids(s)).toEqual(['b.pdf#0', 'c.pdf#0', 'n.pdf#0', 'n.pdf#1']);
+  });
+
+  it('discardLastFile after remove clears undo and keeps the file gone', () => {
+    const s = three();
+    s.remove(['a.pdf#0']);
+    expect(s.discardLastFile()).toBe('c.pdf');
+    expect(s.undo()).toBe(false);
+    expect(ids(s)).toEqual(['b.pdf#0']);
+  });
+
+  it('addFile that adds nothing keeps history; discard on empty keeps history', () => {
+    const s = three();
+    s.remove(['a.pdf#0']);
+    s.addFile('b.pdf', 1, 'pdf', 9);
+    expect(s.undo()).toBe(true);
+    const e = new SessionState(base());
+    e.discardLastFile();
+    expect(e.undo()).toBe(false);
+  });
+
+  it('no-op rotate/remove neither create undo steps nor wipe redo', () => {
+    const s = three();
+    s.rotate([], 1);
+    s.remove(['nope']);
+    s.rotate(['nope'], -1);
+    expect(s.undo()).toBe(false);
+    s.remove(['a.pdf#0']);
+    s.undo();
+    s.rotate(['nope'], 1);
+    s.remove([]);
+    expect(s.redo()).toBe(true);
+    expect(ids(s)).toEqual(['b.pdf#0', 'c.pdf#0']);
+  });
+});
