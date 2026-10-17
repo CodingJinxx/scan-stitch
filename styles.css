@@ -588,6 +588,11 @@
   }
 }
 
+/* Lifecycle dialogs: let the button row wrap instead of overflowing a narrow window */
+.scan-stitch-modal-buttons .setting-item-control {
+  flex-wrap: wrap;
+}
+
 /* Leave-review confirmation */
 .scan-stitch-leave p {
   margin-top: 0;

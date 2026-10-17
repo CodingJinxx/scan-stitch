@@ -14,6 +14,7 @@ function renderConfirm(modal: Modal, question: string, confirmLabel: string, onC
   contentEl.empty();
   contentEl.createEl('p', { text: question });
   new Setting(contentEl)
+    .setClass('scan-stitch-modal-buttons')
     .addButton((b) => b.setButtonText('Back').onClick(onBack))
     .addButton((b) => b.setButtonText(confirmLabel).setWarning().onClick(onConfirm));
 }
@@ -52,6 +53,7 @@ export class ResumePromptModal extends Modal {
       dl.createEl('dd', { text: line.value });
     }
     new Setting(contentEl)
+      .setClass('scan-stitch-modal-buttons')
       .addButton((b) =>
         b
           .setButtonText('Resume')
@@ -105,7 +107,7 @@ export class ExistingSessionModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createEl('p', { text: 'Only one session can run at a time.' });
-    const row = new Setting(contentEl);
+    const row = new Setting(contentEl).setClass('scan-stitch-modal-buttons');
     for (const opt of EXISTING_SESSION_OPTIONS) {
       row.addButton((b) => {
         b.setButtonText(opt.label);
