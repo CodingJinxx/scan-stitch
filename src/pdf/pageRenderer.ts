@@ -8,6 +8,7 @@ export interface PageImage {
 
 export interface RenderEnv {
   createCanvas(w: number, h: number): { canvas: unknown; ctx: unknown; toBlob(): Promise<Blob> };
+  releaseCanvas?(surface: { canvas: unknown; ctx: unknown }): void;
   createObjectURL(blob: Blob): string;
   revokeObjectURL(url: string): void;
 }
@@ -15,6 +16,9 @@ export interface RenderEnv {
 export type DecodeImage = (blob: Blob) => Promise<{ width: number; height: number }>;
 
 const CACHE_SIZE = 60;
+const MAX_OPEN_DOCS = 6;
+const MAX_PIXELS = 16_000_000;
+const MAX_SCALE = 4;
 
 // Defaults only touch document/URL when called, never at import time.
 const defaultEnv: RenderEnv = {
@@ -31,6 +35,11 @@ const defaultEnv: RenderEnv = {
           canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Canvas encode failed'))), 'image/png');
         }),
     };
+  },
+  releaseCanvas(surface) {
+    const c = surface.canvas as HTMLCanvasElement;
+    c.width = 0;
+    c.height = 0;
   },
   createObjectURL: (blob) => URL.createObjectURL(blob),
   revokeObjectURL: (url) => URL.revokeObjectURL(url),
@@ -68,10 +77,16 @@ interface PdfViewport {
 interface PdfPage {
   getViewport(args: { scale: number }): PdfViewport;
   render(args: { canvasContext: unknown; viewport: PdfViewport }): { promise: Promise<unknown> };
+  cleanup?: () => unknown;
 }
 interface PdfDoc {
   getPage(n: number): Promise<PdfPage>;
   destroy?: () => unknown;
+}
+interface DocEntry {
+  promise: Promise<PdfDoc>;
+  doc?: PdfDoc;
+  busy: number;
 }
 interface PdfJs {
   getDocument(args: { data: Uint8Array }): { promise: Promise<PdfDoc> };
@@ -80,8 +95,7 @@ interface PdfJs {
 export class PageRenderer {
   private cache = new Map<string, PageImage>();
   private inflight = new Map<string, Promise<PageImage>>();
-  private docs = new Map<string, Promise<PdfDoc>>();
-  private openDocs = new Set<PdfDoc>();
+  private docs = new Map<string, DocEntry>();
   private disposed = false;
 
   constructor(
@@ -132,15 +146,8 @@ export class PageRenderer {
     for (const img of this.cache.values()) this.env.revokeObjectURL(img.url);
     this.cache.clear();
     this.inflight.clear();
-    for (const doc of this.openDocs) void doc.destroy?.();
-    this.openDocs.clear();
-    for (const d of this.docs.values()) {
-      d.then(
-        (doc) => {
-          if (!this.openDocs.has(doc)) void doc.destroy?.();
-        },
-        () => undefined,
-      );
+    for (const entry of this.docs.values()) {
+      if (entry.doc) void entry.doc.destroy?.();
     }
     this.docs.clear();
   }
@@ -161,34 +168,80 @@ export class PageRenderer {
     };
   }
 
-  private getDoc(path: string): Promise<PdfDoc> {
-    let d = this.docs.get(path);
-    if (!d) {
-      d = (async () => {
+  private getEntry(path: string): DocEntry {
+    const existing = this.docs.get(path);
+    if (existing) {
+      this.docs.delete(path);
+      this.docs.set(path, existing);
+      return existing;
+    }
+    const e: DocEntry = { busy: 0, promise: undefined as unknown as Promise<PdfDoc> };
+    e.promise = (async () => {
+      try {
         const [bytes, pdfjs] = await Promise.all([this.loadBytes(path), this.loadPdfJs()]);
         const doc = await pdfjs.getDocument({ data: bytes }).promise;
-        if (!this.disposed) this.openDocs.add(doc);
+        if (this.disposed) {
+          void doc.destroy?.();
+          throw new Error('PageRenderer disposed');
+        }
+        e.doc = doc;
         return doc;
-      })();
-      this.docs.set(path, d);
-      d.catch(() => {
-        if (this.docs.get(path) === d) this.docs.delete(path);
-      });
+      } catch (err) {
+        if (this.docs.get(path) === e) this.docs.delete(path);
+        throw err;
+      }
+    })();
+    this.docs.set(path, e);
+    return e;
+  }
+
+  private evictDocs(): void {
+    for (;;) {
+      let open = 0;
+      let victim: string | undefined;
+      for (const [path, e] of this.docs) {
+        if (!e.doc) continue;
+        open++;
+        if (victim === undefined && e.busy === 0) victim = path;
+      }
+      if (open <= MAX_OPEN_DOCS || victim === undefined) return;
+      const e = this.docs.get(victim)!;
+      this.docs.delete(victim);
+      void e.doc?.destroy?.();
     }
-    return d;
   }
 
   private async renderPdf(page: PageRef, maxEdge: number): Promise<PageImage> {
-    const doc = await this.getDoc(page.path);
-    const pdfPage = await doc.getPage(page.pageIndex + 1);
-    const base = pdfPage.getViewport({ scale: 1 });
-    const scale = maxEdge / Math.max(base.width, base.height);
-    const viewport = pdfPage.getViewport({ scale });
-    const width = Math.max(1, Math.round(viewport.width));
-    const height = Math.max(1, Math.round(viewport.height));
-    const surface = this.env.createCanvas(width, height);
-    await pdfPage.render({ canvasContext: surface.ctx, viewport }).promise;
-    const blob = await surface.toBlob();
-    return { url: this.env.createObjectURL(blob), width, height };
+    const entry = this.getEntry(page.path);
+    entry.busy++;
+    try {
+      const doc = await entry.promise;
+      this.evictDocs();
+      const pdfPage = await doc.getPage(page.pageIndex + 1);
+      try {
+        const base = pdfPage.getViewport({ scale: 1 });
+        const scale = Math.min(
+          MAX_SCALE,
+          maxEdge / Math.max(base.width, base.height),
+          Math.sqrt(MAX_PIXELS / (base.width * base.height)),
+        );
+        const viewport = pdfPage.getViewport({ scale });
+        const width = Math.max(1, Math.round(viewport.width));
+        const height = Math.max(1, Math.round(viewport.height));
+        const surface = this.env.createCanvas(width, height);
+        try {
+          await pdfPage.render({ canvasContext: surface.ctx, viewport }).promise;
+          const blob = await surface.toBlob();
+          return { url: this.env.createObjectURL(blob), width, height };
+        } finally {
+          this.env.releaseCanvas?.(surface);
+        }
+      } finally {
+        pdfPage.cleanup?.();
+      }
+    } finally {
+      entry.busy--;
+      this.evictDocs();
+    }
   }
 }
