@@ -8,7 +8,7 @@ export interface StartInit {
   appendTarget: string | null;
 }
 
-export type StartError = 'no-watch-root' | 'no-destination' | 'no-append-target';
+export type StartError = 'no-watch-root' | 'no-destination' | 'no-append-target' | 'append-target-invalid';
 
 export interface StartState {
   watchRoot: string;
@@ -32,9 +32,22 @@ export function pickTemplate(settings: ScanStitchSettings, name?: string): Templ
   );
 }
 
-/** Newest recent, else the template's stored folder, else empty. */
+/**
+ * Canonical UI form of a destination: trimmed, single slashes, no leading or
+ * trailing slash. The vault root is '/'. Empty input stays empty (not chosen).
+ */
+export function normalizeDestination(raw: string): string {
+  const t = raw.trim().replace(/[\\]/g, '/');
+  if (t === '') return '';
+  const parts = t.split('/').filter((p) => p !== '');
+  return parts.length === 0 ? '/' : parts.join('/');
+}
+
+/** Newest recent, else the template's stored folder, else empty. The root is '/'. */
 export function defaultDestination(settings: ScanStitchSettings, template: Template): string {
-  return settings.recentLocations[0] ?? template.folder ?? '';
+  const recent = settings.recentLocations[0];
+  if (recent !== undefined) return recent === '' ? '/' : normalizeDestination(recent);
+  return normalizeDestination(template.folder ?? '');
 }
 
 /** Last path segment; the vault root ('' or '/') has no name. */
@@ -76,14 +89,19 @@ export function previewFilename(pattern: string, opts: PreviewOptions): string {
   return out.split(PAGES_SENTINEL).join('?');
 }
 
-export function validateStart(s: StartState): StartError | null {
+/** `isPdf` reports whether a vault path is an existing PDF; omit to skip that check. */
+export function validateStart(s: StartState, isPdf?: (path: string) => boolean): StartError | null {
   if (s.watchRoot.trim() === '') return 'no-watch-root';
-  if (s.appendMode) return s.appendTarget.trim() === '' ? 'no-append-target' : null;
-  return s.destination.trim() === '' ? 'no-destination' : null;
+  if (s.appendMode) {
+    const target = s.appendTarget.trim();
+    if (target === '') return 'no-append-target';
+    return isPdf && !isPdf(target) ? 'append-target-invalid' : null;
+  }
+  return normalizeDestination(s.destination) === '' ? 'no-destination' : null;
 }
 
-export function buildInit(s: StartState): StartInit | null {
-  if (validateStart(s) !== null) return null;
+export function buildInit(s: StartState, isPdf?: (path: string) => boolean): StartInit | null {
+  if (validateStart(s, isPdf) !== null) return null;
   if (s.appendMode) {
     const target = s.appendTarget.trim();
     const file = target.slice(target.lastIndexOf('/') + 1);
@@ -94,7 +112,7 @@ export function buildInit(s: StartState): StartInit | null {
       appendTarget: target,
     };
   }
-  const dest = s.destination.trim();
+  const dest = normalizeDestination(s.destination);
   return {
     destinationFolder: dest === '/' ? '' : dest,
     templateName: s.templateName,
@@ -107,4 +125,5 @@ export const START_ERROR_TEXT: Record<StartError, string> = {
   'no-watch-root': 'Set the scanner folder in the plugin settings first.',
   'no-destination': 'Choose a destination folder.',
   'no-append-target': 'Choose the PDF to append to.',
+  'append-target-invalid': 'Choose an existing PDF',
 };

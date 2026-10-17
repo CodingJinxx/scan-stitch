@@ -1,4 +1,4 @@
-import { Modal, Setting, TFolder, moment } from 'obsidian';
+import { Modal, Setting, TFile, TFolder, moment } from 'obsidian';
 import type { App } from 'obsidian';
 import type { ScanStitchSettings } from '../types';
 import { FolderSuggest, PdfSuggest } from './FolderSuggest';
@@ -6,6 +6,7 @@ import {
   buildInit,
   defaultDestination,
   folderName,
+  normalizeDestination,
   pickTemplate,
   previewFilename,
   START_ERROR_TEXT,
@@ -35,6 +36,8 @@ export class StartDialog extends Modal {
   private errorEl!: HTMLElement;
   private folderInput!: HTMLInputElement;
   private pdfInput!: HTMLInputElement;
+  private startBtn!: HTMLButtonElement;
+  private suggesters: { close(): void }[] = [];
 
   constructor(
     app: App,
@@ -54,10 +57,8 @@ export class StartDialog extends Modal {
     // Enter starts when valid, unless a button or select has focus (the suggestion
     // popover handles its own Enter first).
     this.scope.register([], 'Enter', (evt) => {
-      const target = evt.target;
-      if (target instanceof HTMLElement && (target.tagName === 'BUTTON' || target.tagName === 'SELECT')) {
-        return true;
-      }
+      const tag = (evt.target as HTMLElement | null)?.tagName;
+      if (tag === 'BUTTON' || tag === 'SELECT') return true;
       this.submit();
       return false;
     });
@@ -72,14 +73,32 @@ export class StartDialog extends Modal {
     const actions = contentEl.createDiv({ cls: 'scan-stitch-actions' });
     const cancel = actions.createEl('button', { text: 'Cancel' });
     cancel.addEventListener('click', () => this.close());
-    const start = actions.createEl('button', { text: 'Start', cls: 'mod-cta' });
-    start.addEventListener('click', () => this.submit());
+    this.startBtn = actions.createEl('button', { text: 'Start', cls: 'mod-cta' });
+    this.startBtn.addEventListener('click', () => this.submit());
 
     this.refresh();
-    window.setTimeout(() => this.folderInput.focus(), 0);
+    // One keypress for the common path: a valid default focuses Start (Enter activates it),
+    // and the suggester is not opened by programmatic focus.
+    window.setTimeout(() => this.focusInitial(), 0);
   }
 
+  private focusInitial(): void {
+    if (this.isValid()) this.startBtn.focus();
+    else this.folderInput.focus();
+  }
+
+  private isValid(): boolean {
+    return validateStart(this.state(), this.isPdf) === null;
+  }
+
+  private readonly isPdf = (path: string): boolean => {
+    const f = this.app.vault.getAbstractFileByPath(path);
+    return f instanceof TFile && f.extension.toLowerCase() === 'pdf';
+  };
+
   onClose(): void {
+    for (const sg of this.suggesters) sg.close();
+    this.suggesters = [];
     this.contentEl.empty();
   }
 
@@ -101,10 +120,12 @@ export class StartDialog extends Modal {
       this.destination = this.folderInput.value;
       this.refresh();
     });
-    new FolderSuggest(this.app, this.folderInput, (path) => {
-      this.destination = path;
-      this.refresh();
-    });
+    this.suggesters.push(
+      new FolderSuggest(this.app, this.folderInput, (path) => {
+        this.destination = path;
+        this.refresh();
+      }),
+    );
 
     this.recentEl = root.createDiv({ cls: 'scan-stitch-recent' });
 
@@ -130,6 +151,7 @@ export class StartDialog extends Modal {
     const preview = root.createDiv({ cls: 'scan-stitch-preview' });
     preview.createSpan({ text: 'File name', cls: 'scan-stitch-preview-label' });
     this.previewEl = preview.createSpan({ cls: 'scan-stitch-preview-name' });
+    this.previewEl.setAttribute('aria-live', 'polite');
   }
 
   private buildAppendSection(parent: HTMLElement): void {
@@ -147,10 +169,12 @@ export class StartDialog extends Modal {
       this.appendTarget = this.pdfInput.value;
       this.refresh();
     });
-    new PdfSuggest(this.app, this.pdfInput, (path) => {
-      this.appendTarget = path;
-      this.refresh();
-    });
+    this.suggesters.push(
+      new PdfSuggest(this.app, this.pdfInput, (path) => {
+        this.appendTarget = path;
+        this.refresh();
+      }),
+    );
   }
 
   private buildToggle(parent: HTMLElement): void {
@@ -171,7 +195,7 @@ export class StartDialog extends Modal {
     return {
       watchRoot: this.deps.settings.watchRoot,
       appendMode: this.appendMode,
-      destination: this.destination,
+      destination: normalizeDestination(this.destination),
       templateName: this.templateName,
       filename: this.currentFilename(),
       appendTarget: this.appendTarget,
@@ -180,7 +204,7 @@ export class StartDialog extends Modal {
 
   private currentFilename(): string {
     const template = pickTemplate(this.deps.settings, this.templateName);
-    const dest = this.destination.trim();
+    const dest = normalizeDestination(this.destination);
     const found = dest === '/' ? this.app.vault.getRoot() : this.app.vault.getAbstractFileByPath(dest);
     const folder = found instanceof TFolder ? found : null;
     const existing = folder ? folder.children.map((c) => c.name) : [];
@@ -199,7 +223,7 @@ export class StartDialog extends Modal {
     this.previewEl.setText(this.currentFilename() + '.pdf');
     this.renderRecents();
 
-    const err = validateStart(this.state());
+    const err = validateStart(this.state(), this.isPdf);
     const message = this.showErrors && err ? START_ERROR_TEXT[err] : '';
     this.errorEl.setText(message);
     this.errorEl.toggleClass('scan-stitch-hidden', message === '');
@@ -213,21 +237,25 @@ export class StartDialog extends Modal {
     this.recentEl.createSpan({ text: 'Recent', cls: 'scan-stitch-recent-label' });
     const list = this.recentEl.createDiv({ cls: 'scan-stitch-chips' });
     for (const path of recents) {
-      const chip = list.createEl('button', { text: path === '' ? '/' : path, cls: 'scan-stitch-chip' });
+      const canonical = path === '' ? '/' : normalizeDestination(path);
+      const selected = canonical === normalizeDestination(this.destination);
+      const chip = list.createEl('button', { text: canonical, cls: 'scan-stitch-chip' });
       chip.type = 'button';
-      chip.toggleClass('is-selected', path === this.destination);
+      chip.setAttribute('aria-pressed', String(selected));
+      chip.toggleClass('is-selected', selected);
       chip.addEventListener('click', () => {
-        this.destination = path;
-        this.folderInput.value = path;
-        this.folderInput.focus();
+        this.destination = canonical;
+        this.folderInput.value = canonical;
         this.refresh();
+        if (this.isValid()) this.startBtn.focus();
+        else this.folderInput.focus();
       });
     }
   }
 
   private submit(): void {
     this.showErrors = true;
-    const init = buildInit(this.state());
+    const init = buildInit(this.state(), this.isPdf);
     if (!init) {
       this.refresh();
       return;

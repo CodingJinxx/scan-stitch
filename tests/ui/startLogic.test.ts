@@ -5,6 +5,7 @@ import {
   buildInit,
   defaultDestination,
   folderName,
+  normalizeDestination,
   parentFolder,
   pickTemplate,
   previewFilename,
@@ -126,5 +127,37 @@ describe('validateStart / buildInit', () => {
       filename: 'Report 1',
       appendTarget: 'A/B/Report 1.pdf',
     });
+  });
+});
+
+describe('root and normalisation (review fixes)', () => {
+  const st: StartState = {
+    watchRoot: 'C:/Scans', appendMode: false, destination: 'Docs',
+    templateName: 'Scan', filename: 'x', appendTarget: '',
+  };
+  it('defaultDestination maps a root recent to /', () => {
+    const s = settings({ recentLocations: ['', 'A'] });
+    expect(defaultDestination(s, { name: 'x', pattern: 'x' })).toBe('/');
+  });
+  it('root is startable and emits an empty folder', () => {
+    expect(validateStart({ ...st, destination: '/' })).toBeNull();
+    expect(buildInit({ ...st, destination: '/' })?.destinationFolder).toBe('');
+  });
+  it('normalises typed destinations', () => {
+    expect(normalizeDestination('Docs/')).toBe('Docs');
+    expect(normalizeDestination(' Docs ')).toBe('Docs');
+    expect(normalizeDestination('/Docs')).toBe('Docs');
+    expect(normalizeDestination('//A//B/')).toBe('A/B');
+    expect(normalizeDestination('/')).toBe('/');
+    expect(normalizeDestination('  ')).toBe('');
+    expect(buildInit({ ...st, destination: 'Docs/' })?.destinationFolder).toBe('Docs');
+    expect(buildInit({ ...st, destination: ' Docs ' })?.destinationFolder).toBe('Docs');
+    expect(buildInit({ ...st, destination: '/Docs' })?.destinationFolder).toBe('Docs');
+  });
+  it('rejects an append target that is not an existing pdf', () => {
+    const a = { ...st, appendMode: true, appendTarget: 'A/x.pdf' };
+    expect(validateStart(a, () => false)).toBe('append-target-invalid');
+    expect(buildInit(a, () => false)).toBeNull();
+    expect(validateStart(a, () => true)).toBeNull();
   });
 });
