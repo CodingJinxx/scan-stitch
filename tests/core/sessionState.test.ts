@@ -223,3 +223,38 @@ describe('SessionState canUndo/canRedo', () => {
     expect(s.canUndo()).toBe(true);
   });
 });
+
+describe('SessionState files removed in review', () => {
+  it('a file removed in review is not added again when scanning resumes', () => {
+    const s = three();
+    s.remove(['b.pdf#0']);
+    expect(s.data.discardedPaths).toEqual(['b.pdf']);
+    expect(s.addFile('b.pdf', 1, 'pdf', 9)).toEqual([]);
+    expect(ids(s)).toEqual(['a.pdf#0', 'c.pdf#0']);
+  });
+
+  it('undo of a removal forgets the discarded path; redo records it again', () => {
+    const s = three();
+    s.remove(['b.pdf#0']);
+    s.undo();
+    expect(s.data.discardedPaths).toEqual([]);
+    s.redo();
+    expect(s.data.discardedPaths).toEqual(['b.pdf']);
+  });
+
+  it('removing some pages of a multi-page file keeps the file', () => {
+    const s = new SessionState(base());
+    s.addFile('m.pdf', 3, 'pdf', 1);
+    s.remove(['m.pdf#1']);
+    expect(s.data.discardedPaths).toEqual([]);
+    s.remove(['m.pdf#0', 'm.pdf#2']);
+    expect(s.data.discardedPaths).toEqual(['m.pdf']);
+  });
+
+  it('keeps the removal across serialisation (resume)', () => {
+    const s = three();
+    s.remove(['c.pdf#0']);
+    const resumed = new SessionState(JSON.parse(JSON.stringify(s.toJSON())) as SessionData);
+    expect(resumed.addFile('c.pdf', 1, 'pdf', 9)).toEqual([]);
+  });
+});

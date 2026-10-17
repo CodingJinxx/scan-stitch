@@ -6,10 +6,16 @@ function clonePages(pages: PageRef[]): PageRef[] {
   return pages.map((p) => ({ ...p }));
 }
 
+/** An undo step: the page list plus the discarded paths, which a review removal can extend. */
+interface Snapshot {
+  pages: PageRef[];
+  discardedPaths: string[];
+}
+
 export class SessionState {
   private d: SessionData;
-  private undoStack: PageRef[][] = [];
-  private redoStack: PageRef[][] = [];
+  private undoStack: Snapshot[] = [];
+  private redoStack: Snapshot[] = [];
 
   constructor(data: SessionData) {
     this.d = {
@@ -60,7 +66,15 @@ export class SessionState {
     const set = new Set(ids);
     if (!this.d.pages.some((p) => set.has(p.id))) return;
     this.checkpoint();
+    const removed = this.d.pages.filter((p) => set.has(p.id));
     this.d.pages = this.d.pages.filter((p) => !set.has(p.id));
+    // A file with no pages left counts as discarded, so the watcher does not add it
+    // again when the session goes back to scanning (undo restores it).
+    for (const path of new Set(removed.map((p) => p.path))) {
+      if (!this.d.pages.some((p) => p.path === path) && !this.d.discardedPaths.includes(path)) {
+        this.d.discardedPaths.push(path);
+      }
+    }
   }
 
   move(id: string, toIndex: number): void {
@@ -78,16 +92,16 @@ export class SessionState {
   undo(): boolean {
     const prev = this.undoStack.pop();
     if (!prev) return false;
-    this.redoStack.push(clonePages(this.d.pages));
-    this.d.pages = prev;
+    this.redoStack.push(this.snapshot());
+    this.restore(prev);
     return true;
   }
 
   redo(): boolean {
     const next = this.redoStack.pop();
     if (!next) return false;
-    this.undoStack.push(clonePages(this.d.pages));
-    this.d.pages = next;
+    this.undoStack.push(this.snapshot());
+    this.restore(next);
     return true;
   }
 
@@ -117,8 +131,17 @@ export class SessionState {
     this.redoStack = [];
   }
 
+  private snapshot(): Snapshot {
+    return { pages: clonePages(this.d.pages), discardedPaths: [...this.d.discardedPaths] };
+  }
+
+  private restore(s: Snapshot): void {
+    this.d.pages = s.pages;
+    this.d.discardedPaths = s.discardedPaths;
+  }
+
   private checkpoint(): void {
-    this.undoStack.push(clonePages(this.d.pages));
+    this.undoStack.push(this.snapshot());
     if (this.undoStack.length > UNDO_CAP) this.undoStack.shift();
     this.redoStack = [];
   }
