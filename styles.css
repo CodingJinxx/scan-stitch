@@ -648,3 +648,19 @@
 .scan-stitch-template-form .scan-stitch-error {
   margin-top: var(--size-2-2);
 }
+
+.scan-stitch-summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--size-2-1) var(--size-4-3);
+  margin: 0 0 var(--size-4-2);
+}
+
+.scan-stitch-summary dt {
+  color: var(--text-muted);
+}
+
+.scan-stitch-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

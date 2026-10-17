@@ -1,22 +1,34 @@
 import * as fs from 'fs';
-import { Notice, Plugin, loadPdfJs, type WorkspaceLeaf } from 'obsidian';
+import { Notice, Plugin, loadPdfJs, type Modal, type WorkspaceLeaf } from 'obsidian';
 import { PDFDocument } from 'pdf-lib';
 import { loadSettings } from './core/settings';
 import { PageRenderer } from './pdf/pageRenderer';
 import { SessionController } from './scan/sessionController';
 import { ScanStitchSettingTab } from './ui/SettingsTab';
+import { ExistingSessionModal, ResumePromptModal } from './ui/LifecycleModals';
 import { ReviewView } from './ui/ReviewView';
 import { ScanPaneView } from './ui/ScanPaneView';
 import { StartDialog } from './ui/StartDialog';
+import { resumeChoice } from './ui/lifecycleLogic';
 import { paneModel, statusText } from './ui/paneModel';
 import { REVIEW_VIEW_TYPE, SCAN_VIEW_TYPE } from './ui/viewTypes';
 import type { ScanStitchSettings, SessionData } from './types';
+
+async function readBytes(path: string): Promise<Uint8Array> {
+  const b = await fs.promises.readFile(path);
+  return new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+}
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
 
 export default class ScanStitchPlugin extends Plugin {
   declare settings: ScanStitchSettings;
   controller!: SessionController;
   renderer!: PageRenderer;
   private statusEl: HTMLElement | null = null;
+  private modal: Modal | null = null;
 
   async onload(): Promise<void> {
     this.settings = loadSettings(await this.loadData());
@@ -31,15 +43,12 @@ export default class ScanStitchPlugin extends Plugin {
         new Notice(m);
       },
       countPdfPages: async (path) => {
-        const doc = await PDFDocument.load(fs.readFileSync(path));
+        const doc = await PDFDocument.load(await fs.promises.readFile(path));
         return doc.getPageCount();
       },
     });
 
-    this.renderer = new PageRenderer(
-      (p) => Promise.resolve(new Uint8Array(fs.readFileSync(p))),
-      () => loadPdfJs(),
-    );
+    this.renderer = new PageRenderer(readBytes, () => loadPdfJs());
 
     this.registerView(
       SCAN_VIEW_TYPE,
@@ -61,10 +70,7 @@ export default class ScanStitchPlugin extends Plugin {
           settings: () => this.settings,
           saveSettings: () => this.saveSettings(),
           openScanPane: () => this.openScanPane(),
-          readSource: async (p) => {
-            const b = await fs.promises.readFile(p);
-            return new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
-          },
+          readSource: readBytes,
           pluginDir: this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`,
         }),
     );
@@ -80,28 +86,38 @@ export default class ScanStitchPlugin extends Plugin {
     this.addRibbonIcon('scan', 'Start scan session', () => this.startSession());
 
     this.addCommand({ id: 'start-session', name: 'Start scan session', callback: () => this.startSession() });
-    this.addCommand({ id: 'end-session', name: 'End scan session', callback: () => this.endSession() });
+    this.addCommand({
+      id: 'end-session',
+      name: 'End scan session',
+      checkCallback: (checking) => {
+        if (!paneModel(this.controller.state).scanning) return false;
+        if (!checking) this.endSession();
+        return true;
+      },
+    });
     this.addCommand({
       id: 'discard-last-page',
       name: 'Discard last scanned page',
-      callback: () => this.controller.discardLast(),
+      checkCallback: (checking) => {
+        if (!paneModel(this.controller.state).canDiscard) return false;
+        if (!checking) this.controller.discardLast();
+        return true;
+      },
     });
     this.addCommand({
       id: 'resume-session',
       name: 'Resume scan session',
-      callback: () => {
-        const s = this.controller.state;
-        if (!s) {
-          new Notice('No scan session to resume');
-          return;
-        }
-        if (s.data.phase === 'review') void this.openReview();
-        else void this.openScanPane();
-      },
+      callback: () => void this.resumeSession(),
     });
+
+    this.app.workspace.onLayoutReady(() => this.offerResume());
   }
 
   onunload(): void {
+    this.modal?.close();
+    this.modal = null;
+    // Stops the watcher and flushes pending writes; the stored session stays for the next start.
+    void this.controller?.shutdown();
     this.renderer?.dispose();
   }
 
@@ -109,21 +125,89 @@ export default class ScanStitchPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  /** A session exists if one is running or one is stored and not yet resumed. */
+  private hasSession(): boolean {
+    return this.controller.state !== null || this.settings.session !== null;
+  }
+
+  private openModal(modal: Modal): void {
+    this.modal?.close();
+    this.modal = modal;
+    modal.open();
+  }
+
+  private offerResume(): void {
+    const session = this.settings.session;
+    if (this.controller.state || !session || resumeChoice(session) === 'none') return;
+    this.openModal(
+      new ResumePromptModal(this.app, {
+        session,
+        onResume: () => void this.resumeSession(),
+        onDrop: () => void this.dropSession(),
+      }),
+    );
+  }
+
+  /** Opens the running session, or restores the stored one first. */
+  async resumeSession(): Promise<void> {
+    try {
+      if (!this.controller.state) {
+        const stored = this.settings.session;
+        if (!stored || resumeChoice(stored) === 'none') {
+          new Notice('No scan session to resume');
+          return;
+        }
+        await this.controller.resume(stored);
+      }
+      const state = this.controller.state;
+      if (!state) return;
+      if (resumeChoice(state.data) === 'review') await this.openReview();
+      else await this.openScanPane();
+    } catch (e) {
+      new Notice(`Could not resume the scan session: ${errorText(e)}`);
+    }
+  }
+
+  private async dropSession(): Promise<boolean> {
+    try {
+      await this.controller.finish();
+      return true;
+    } catch (e) {
+      new Notice(`Could not drop the scan session: ${errorText(e)}`);
+      return false;
+    }
+  }
+
   startSession(): void {
-    const existing = this.controller.state;
-    if (existing) {
-      new Notice('A scan session is already open');
-      if (existing.data.phase === 'review') void this.openReview();
-      else void this.openScanPane();
+    if (!this.hasSession()) {
+      this.openStartDialog();
       return;
     }
-    new StartDialog(this.app, {
-      settings: this.settings,
-      onStart: (init) => {
-        this.controller.start(init);
-        void this.openScanPane();
-      },
-    }).open();
+    this.openModal(
+      new ExistingSessionModal(this.app, {
+        onChoice: (choice) => {
+          if (choice === 'resume') void this.resumeSession();
+          else void this.dropSession().then((ok) => ok && this.openStartDialog());
+        },
+      }),
+    );
+  }
+
+  private openStartDialog(): void {
+    this.openModal(
+      new StartDialog(this.app, {
+        settings: this.settings,
+        onStart: (init) => {
+          try {
+            this.controller.start(init);
+          } catch (e) {
+            new Notice(`Could not start the scan session: ${errorText(e)}`);
+            return;
+          }
+          void this.openScanPane();
+        },
+      }),
+    );
   }
 
   endSession(): void {
