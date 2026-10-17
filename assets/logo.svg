@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Scan Stitch">
+  <rect width="512" height="512" rx="112" fill="#5A3FD0"/>
+  <rect x="114" y="132" width="176" height="248" rx="18" fill="#C3B6FF" transform="rotate(-12 202 256)"/>
+  <rect x="240" y="128" width="176" height="256" rx="18" fill="#FFFFFF"/>
+  <g fill="#24165F">
+    <rect x="196" y="178" width="88" height="28" rx="14" transform="rotate(-35 240 192)"/>
+    <rect x="196" y="242" width="88" height="28" rx="14" transform="rotate(-35 240 256)"/>
+    <rect x="196" y="306" width="88" height="28" rx="14" transform="rotate(-35 240 320)"/>
+  </g>
+</svg>
