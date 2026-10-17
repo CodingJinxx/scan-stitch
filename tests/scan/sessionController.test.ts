@@ -226,6 +226,25 @@ describe('SessionController', () => {
     expect(notes.some((n) => /save/i.test(n))).toBe(true);
   });
 
+  it('commit persists direct edits and notifies; no-op without a session', async () => {
+    const c = new SessionController(deps);
+    const changes = vi.fn();
+    c.onChange(changes);
+    c.commit();
+    await flush();
+    expect(persisted).toHaveLength(0);
+    expect(changes).not.toHaveBeenCalled();
+    c.start(INIT);
+    watchers[0].opts.onFile({ path: '/scans/a.pdf', seenAt: 1 });
+    await flush();
+    changes.mockClear();
+    c.state?.rotate(['/scans/a.pdf#0'], 1);
+    c.commit();
+    await flush();
+    expect(persisted.at(-1)?.pages[0].rotation).toBe(90);
+    expect(changes).toHaveBeenCalled();
+  });
+
   it('finish clears the session and persists null', async () => {
     const c = new SessionController(deps);
     c.start(INIT);
@@ -259,11 +278,11 @@ describe('SessionController', () => {
       const page = (p: string, i: number) => ({ id: `${p}#${i}`, path: p, pageIndex: i, kind: 'pdf' as const, rotation: 0 as const, seenAt: 1 });
       const c = new SessionController(deps);
       await c.resume(
-        data({ pages: [page(real, 0), page('/gone/a.pdf', 0), page('/gone/a.pdf', 1), page('/gone/b.pdf', 0)] }),
+        data({ watchRoot: tmp, pages: [page(real, 0), page('/gone/a.pdf', 0), page('/gone/a.pdf', 1), page('/gone/b.pdf', 0)] }),
       );
       expect(c.state?.data.pages.map((p) => p.path)).toEqual([real]);
       expect(notes.filter((n) => n.includes('missing') || n.includes('no longer'))).toHaveLength(1);
-      expect(watchers[0].opts.root).toBe('/old-root');
+      expect(watchers[0].opts.root).toBe(tmp);
     });
 
     it('rescans and adds newer files, not already known', async () => {
@@ -272,7 +291,7 @@ describe('SessionController', () => {
       const page = { id: `${real}#0`, path: real, pageIndex: 0, kind: 'pdf' as const, rotation: 0 as const, seenAt: 1 };
       const c = new SessionController(deps);
       preload.push({ path: real, seenAt: 2 }, { path: '/scans/new.pdf', seenAt: 3 });
-      await c.resume(data({ pages: [page] }));
+      await c.resume(data({ watchRoot: tmp, pages: [page] }));
       await flush();
       expect(c.state?.data.pages.map((x) => x.path)).toEqual([real, '/scans/new.pdf']);
     });
@@ -284,19 +303,38 @@ describe('SessionController', () => {
       expect(c.state?.data.pages).toEqual([]);
     });
 
-    it('survives wholly malformed input', async () => {
+    it('survives wholly malformed input and persists null', async () => {
       const c = new SessionController(deps);
       await expect(c.resume(null as unknown as SessionData)).resolves.toBeUndefined();
       expect(c.state).toBeNull();
       expect(notes.length).toBeGreaterThan(0);
+      expect(persisted).toEqual([null]);
+    });
+
+    const mkPage = (p: string) => ({ id: `${p}#0`, path: p, pageIndex: 0, kind: 'pdf' as const, rotation: 0 as const, seenAt: 1 });
+
+    it('unavailable root keeps all pages, notifies once, persists, revalidates on restore', async () => {
+      const real = path.join(tmp, 'real.pdf');
+      fs.writeFileSync(real, 'x');
+      const gone = path.join(tmp, 'gone.pdf');
+      const c = new SessionController(deps);
+      await c.resume(data({ watchRoot: path.join(tmp, 'nope'), pages: [mkPage(real), mkPage(gone)] }));
+      await flush();
+      expect(c.state?.data.pages).toHaveLength(2);
+      expect(persisted.at(-1)?.pages).toHaveLength(2);
+      watchers[0].opts.onProblem({ reason: 'root-missing' });
+      expect(notes.filter((n) => n === 'Scanner folder is unavailable')).toHaveLength(1);
+      watchers[0].opts.onProblem({ reason: 'root-restored' });
+      await flush();
+      expect(c.state?.data.pages.map((p) => p.path)).toEqual([real]);
+      expect(persisted.at(-1)?.pages).toHaveLength(1);
     });
 
     it('review phase does not keep a watcher running', async () => {
       const c = new SessionController(deps);
       await c.resume(data({ phase: 'review' }));
       expect(c.state?.data.phase).toBe('review');
-      const w = watchers[0];
-      expect(w === undefined || w.stopped >= w.started).toBe(true);
+      expect(watchers).toHaveLength(0);
     });
 
     it('scanning phase leaves the watcher running', async () => {

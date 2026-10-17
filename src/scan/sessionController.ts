@@ -35,6 +35,8 @@ export class SessionController {
   private persistChain: Promise<void> = Promise.resolve();
   private fileChain: Promise<void> = Promise.resolve();
   private generation = 0;
+  private revalidateOnRestore = false;
+  private swallowRootMissing = false;
 
   constructor(private deps: ControllerDeps) {}
 
@@ -75,25 +77,28 @@ export class SessionController {
     const clean = this.sanitize(data);
     if (!clean) {
       this.notify('Stored scan session was unreadable and was discarded');
+      await this.persistNow(null);
       return;
     }
     this.reset();
-    const exists = new Map<string, boolean>();
-    let missing = 0;
-    const pages = clean.pages.filter((p) => {
-      let ok = exists.get(p.path);
-      if (ok === undefined) {
-        ok = fs.existsSync(p.path);
-        exists.set(p.path, ok);
-        if (!ok) missing++;
-      }
-      return ok;
-    });
-    if (missing > 0) {
-      this.notify(`${missing} scanned file${missing === 1 ? ' is' : 's are'} no longer available and ${missing === 1 ? 'was' : 'were'} skipped`);
+    this.revalidateOnRestore = false;
+    this.swallowRootMissing = false;
+    let pages = clean.pages;
+    const root = clean.watchRoot || this.deps.settings().watchRoot;
+    if (!this.rootAccessible(root)) {
+      // unplugged drive or similar: keep everything, check again when the folder returns
+      this.revalidateOnRestore = true;
+      this.swallowRootMissing = true;
+      this.notify('Scanner folder is unavailable');
+    } else {
+      pages = this.dropMissing(pages);
     }
     this.session = new SessionState({ ...clean, pages });
     const gen = this.generation;
+    if (clean.phase === 'review') {
+      this.changed();
+      return;
+    }
     const w = this.startWatcher();
     try {
       await w.rescan();
@@ -102,7 +107,6 @@ export class SessionController {
       // the watcher keeps polling; nothing to do
     }
     if (gen !== this.generation || !this.session) return;
-    if (this.session.data.phase === 'review') this.stopWatcher();
     this.changed();
   }
 
@@ -128,6 +132,12 @@ export class SessionController {
     this.changed();
   }
 
+  /** Persist and announce edits made directly on `state` (rotate, remove, move, undo, redo). */
+  commit(): void {
+    if (!this.session) return;
+    this.changed();
+  }
+
   async finish(): Promise<void> {
     this.stopWatcher();
     this.generation++;
@@ -138,6 +148,47 @@ export class SessionController {
   }
 
   // ---- internals ----
+
+  private rootAccessible(root: string): boolean {
+    try {
+      return fs.statSync(root).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  private dropMissing(pages: PageRef[]): PageRef[] {
+    const exists = new Map<string, boolean>();
+    let missing = 0;
+    const kept = pages.filter((p) => {
+      let ok = exists.get(p.path);
+      if (ok === undefined) {
+        ok = fs.existsSync(p.path);
+        exists.set(p.path, ok);
+        if (!ok) missing++;
+      }
+      return ok;
+    });
+    if (missing > 0) {
+      this.notify(`${missing} scanned file${missing === 1 ? ' is' : 's are'} no longer available and ${missing === 1 ? 'was' : 'were'} skipped`);
+    }
+    return kept;
+  }
+
+  private revalidate(): void {
+    try {
+      if (!this.revalidateOnRestore || !this.session) return;
+      this.revalidateOnRestore = false;
+      const before = this.session.data.pages;
+      const kept = this.dropMissing(before);
+      if (kept.length !== before.length) {
+        this.session = new SessionState({ ...this.session.toJSON(), pages: kept });
+        this.changed();
+      }
+    } catch {
+      // never throw into the watcher
+    }
+  }
 
   private now(): number {
     return (this.deps.now ?? Date.now)();
@@ -183,8 +234,13 @@ export class SessionController {
       onProblem: (e) => {
         const name = e.path ? path.basename(e.path) : '';
         if (e.reason === 'unreadable') this.notify(`Cannot read ${name || 'a scanned file'}`);
-        else if (e.reason === 'root-missing') this.notify('Scanner folder is unavailable');
-        else if (e.reason === 'root-restored') this.notify('Scanner folder is back');
+        else if (e.reason === 'root-missing') {
+          if (this.swallowRootMissing) this.swallowRootMissing = false;
+          else this.notify('Scanner folder is unavailable');
+        } else if (e.reason === 'root-restored') {
+          this.notify('Scanner folder is back');
+          this.revalidate();
+        }
       },
     };
     const create = this.deps.createWatcher ?? createFolderWatcher;
