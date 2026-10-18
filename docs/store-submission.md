@@ -24,7 +24,7 @@ Checked 2026-10-17 against the official sources listed at the bottom. Status per
 | Status | Rule | Evidence |
 |---|---|---|
 | PASS | Required fields `id`, `name`, `version`, `minAppVersion`, `description`, `author`, `isDesktopOnly` | `manifest.json` lines 2 to 9 |
-| PASS | `version` is `x.y.z` semver | `1.0.1` |
+| PASS | `version` is `x.y.z` semver | `1.0.2` |
 | PASS | `id`: lowercase letters and hyphens, no "obsidian", does not end in "plugin" | `scan-stitch` |
 | UNVERIFIED | `id` unique across published plugins | not checked against the live directory; before submitting run `gh api -H "Accept: application/vnd.github.raw" repos/obsidianmd/obsidian-releases/contents/community-plugins.json` and search for `"id": "scan-stitch"` |
 | PASS | `name`: short, English/Basic Latin, only hyphen, plus, parentheses as punctuation, no emoji, no "Obsidian", no "Plugin", not a core feature name | "Scan Stitch" |
@@ -46,7 +46,7 @@ Checked 2026-10-17 against the official sources listed at the bottom. Status per
 |---|---|---|
 | PASS (not yet run) | Release attaches `main.js`, `manifest.json`, `styles.css` as binary assets | `.github/workflows/release.yml`, step "Create GitHub release": `gh release create "$VERSION" main.js manifest.json styles.css` |
 | PASS (not yet run) | Release tag exactly equals manifest `version` | workflow strips a leading `v` and creates the release under `$VERSION`; the check step fails the job unless the tag minus `v` equals both `manifest.json` and `package.json` versions |
-| PASS | `manifest.json`, `package.json`, `versions.json` agree | `manifest.json` and `package.json` `1.0.1`; `versions.json` maps `1.0.0` to `1.5.0`, which covers 1.0.1 (section 8) |
+| PASS | `manifest.json`, `package.json`, `versions.json` agree | `manifest.json` and `package.json` `1.0.2`; `versions.json` maps `1.0.0` to `1.5.0`, which covers 1.0.1 and 1.0.2 (section 8) |
 | PASS | Build output exists | `main.js` (585134 bytes), `manifest.json`, `styles.css` after `npm run build`; `main.js` is gitignored and built in CI |
 | FAIL (human step) | A GitHub release must exist before submission | none yet; see section 9 |
 | UNVERIFIED | Repo setting "Workflow permissions: read and write" (docs recommend it; the workflow also declares `permissions: contents: write`) | needs a look at Settings > Actions > General on GitHub |
@@ -121,7 +121,7 @@ Legacy PR title and body, UNVERIFIED because the PR template no longer exists: t
 - `npm run typecheck`: clean
 - `npm test`: 20 files, 290 tests passed (includes `tests/versionBump.test.ts`, `tests/ui/dateFormat.test.ts`, `tests/ui/settingSections.test.ts`)
 - `npm run build`: ok; `main.js`, `manifest.json`, `styles.css` present
-- Versions: `manifest.json` 1.0.1, `package.json` 1.0.1, `package-lock.json` 1.0.1, `versions.json` `{"1.0.0": "1.5.0"}` (bumped with `npm version 1.0.1 --no-git-tag-version`; no tag created)
+- Versions: `manifest.json` 1.0.2, `package.json` 1.0.2, `package-lock.json` 1.0.2, `versions.json` `{"1.0.0": "1.5.0"}` (bumped with `npm version 1.0.2 --no-git-tag-version`; no tag created)
 - `.github/workflows/release.yml` parses as valid YAML (`yaml` package from a scratch install outside the repo), including the new attestation step. Not executed on GitHub.
 
 ## 9. Human-only steps remaining
