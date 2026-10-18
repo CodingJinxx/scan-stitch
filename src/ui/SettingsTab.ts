@@ -190,17 +190,37 @@ export class ScanStitchSettingTab extends PluginSettingTab {
   }
 
   private browse(onPick: (path: string) => void): void {
+    // Preferred: the native folder dialog. It also works for empty folders, which an <input> picker cannot select.
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron is only reachable through require
+      const electron = require('electron') as {
+        remote?: { dialog?: { showOpenDialog(o: object): Promise<{ canceled: boolean; filePaths: string[] }> } };
+      };
+      const dialog = electron.remote?.dialog;
+      if (dialog) {
+        void dialog.showOpenDialog({ properties: ['openDirectory'] }).then((r) => {
+          if (!r.canceled && r.filePaths[0]) onPick(r.filePaths[0]);
+        });
+        return;
+      }
+    } catch {
+      // fall back to the input picker
+    }
     const picker = createEl('input', { type: 'file' });
     picker.setAttribute('webkitdirectory', '');
+    picker.addClass('scan-stitch-hidden-picker');
     picker.addEventListener('change', () => {
       const file = picker.files?.[0];
       const full = file ? filePath(file) : '';
+      picker.remove();
       if (!file || full === '') {
-        new Notice('Type the folder path instead');
+        new Notice('Could not read the folder (it may be empty). Type the folder path instead.');
         return;
       }
       onPick(selectedDirFromFile(full, file.webkitRelativePath));
     });
+    // Attached to the DOM so the click is honoured on every Obsidian build.
+    document.body.appendChild(picker);
     picker.click();
   }
 

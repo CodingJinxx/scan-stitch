@@ -686,3 +686,4 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+.scan-stitch-hidden-picker { display: none; }

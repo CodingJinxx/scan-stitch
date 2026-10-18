@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-wordmark-dark.svg">
-  <img alt="Scan Stitch" src="assets/logo-wordmark-light.svg" width="360">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-wordmark-dark.png">
+  <img alt="Scan Stitch" src="assets/logo-wordmark-light.png" width="360">
 </picture>
 
 **Turn a scanner's one-file-per-page output into a single, correctly rotated PDF in your Obsidian vault.**
@@ -11,7 +11,7 @@
 
 <img alt="A scan session in Obsidian: the start dialog, pages arriving in the side pane as the counter rises, Discard last, End session, the crooked pages rotated in the review screen, then Save and open shows the merged PDF." src="assets/demo.gif" width="800">
 
-<a href="https://buymeacoffee.com/codingjinxx"><img src="assets/coffee-button.svg" alt="Buy me a coffee" width="220"></a>
+<a href="https://buymeacoffee.com/codingjinxx"><img src="assets/coffee-button.png" alt="Buy me a coffee" width="220"></a>
 
 </div>
 
@@ -253,7 +253,7 @@ The defaults are `C:\Dev\scan-stitch-demo\vault` for the vault; see the comments
 
 Scan Stitch is free and open source. If it saves you time, you can buy me a coffee; it is never expected, and it helps me keep maintaining it.
 
-<a href="https://buymeacoffee.com/codingjinxx"><img src="assets/coffee-button.svg" alt="Buy me a coffee" width="220"></a>
+<a href="https://buymeacoffee.com/codingjinxx"><img src="assets/coffee-button.png" alt="Buy me a coffee" width="220"></a>
 
 ## Contributing
 
